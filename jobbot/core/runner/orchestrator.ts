@@ -5,6 +5,8 @@ import { LearningEngine } from "../learning/engine";
 import { buildReportHtml } from "../email/report";
 import { sendReportEmail } from "../email/send";
 import { analyzeCv } from "../cv/analyze";
+import { CHROME_QUIT_MSG_HE, isChromeLockError } from "../browser/chrome-lock";
+import { ensureJobbotChromeProfile, jobbotCloneRoot } from "../browser/profile-clone";
 import type {
   AppSettings,
   ApplyResult,
@@ -95,11 +97,40 @@ export class JobRunner {
 
     const keywords = await this.resolveKeywords(settings, config);
     this.log("info", `מצב חיפוש: ${config.searchMode === "cv" ? "מקו״ח" : "מילות מפתח"} · ${keywords.join(", ")}`);
+
+    let jobbotChromeProfileDir: string | undefined;
     if (this.demo) {
       this.log("warn", "מצב הדגמה פעיל — לא יוגשו מועמדויות אמיתיות");
     } else {
-      this.log("info", `Chrome profile: ${chromePath}`);
-      this.log("info", "ודא ש-Chrome סגור לגמרי לפני המשך הריצה");
+      this.log("info", `מקור Chrome: ${chromePath}`);
+      try {
+        const clone = await ensureJobbotChromeProfile({
+          sourceUserDataDir: chromePath,
+          cloneRoot: jobbotCloneRoot(this.dataDir),
+          log: (m) => this.log("info", m),
+        });
+        jobbotChromeProfileDir = clone.path;
+        this.log("info", clone.messageHe);
+        this.log(
+          "info",
+          "Jobbot מפעיל Chrome על עותק נפרד (בלי SingletonLock) — אחרי סנכרון מוצלח אפשר להשאיר את Chrome הרגיל פתוח",
+        );
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        this.log("error", isChromeLockError(err) ? CHROME_QUIT_MSG_HE : msg);
+        this.patch({ phase: "error", finishedAt: new Date().toISOString() });
+        const reportHtml = buildReportHtml({
+          userName: "מתן עמר",
+          progress: this.progress,
+          results: [],
+        });
+        return {
+          progress: this.getProgress(),
+          reportHtml,
+          email: { ok: false, previewOnly: true, error: "CHROME_PROFILE_SYNC_FAILED" },
+          learningNotes: [msg],
+        };
+      }
     }
 
     const enabled = config.enabledSites.length
@@ -123,6 +154,7 @@ export class JobRunner {
       const ctx: SiteAdapterContext = {
         demo: this.demo,
         chromeUserDataDir: chromePath || undefined,
+        jobbotChromeProfileDir,
         cvPath: settings.cvPath || undefined,
         timeoutMs: config.perJobTimeoutMs,
         knowledge,

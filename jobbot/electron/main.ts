@@ -150,9 +150,15 @@ function registerIpc(): void {
     return path.join(os.homedir(), ".config", "google-chrome");
   });
 
-  ipcMain.handle("chrome:probe", async (_e, chromeUserDataDir: string) => {
-    return probeChromeProfile(chromeUserDataDir);
-  });
+  ipcMain.handle(
+    "chrome:probe",
+    async (_e, chromeUserDataDir: string, opts?: { forceSync?: boolean }) => {
+      return probeChromeProfile(chromeUserDataDir, {
+        dataDir: dataDir(),
+        forceSync: opts?.forceSync,
+      });
+    },
+  );
 
   ipcMain.handle("chrome:resolvePath", (_e, raw: string) => resolveChromeUserDataDir(raw));
 

@@ -2,31 +2,25 @@
 
 ## א. חיבור החבילה (חלקים → Jobbot.app)
 
-### דרך אמינה — Terminal
-
 ```bash
 mkdir -p ~/Desktop/Jobbot && cd ~/Desktop/Jobbot
 # העבר לכאן את שלושת ה-.part ואז:
 cat Jobbot-0.1.0-mac-arm64.zip.part00 Jobbot-0.1.0-mac-arm64.zip.part01 Jobbot-0.1.0-mac-arm64.zip.part02 > Jobbot-mac.zip && open .
 ```
 
-לחץ פעמיים על `Jobbot-mac.zip` → `Jobbot.app` → לחיצה ימנית ← **פתח** אם חוסמים.
-
-גם: `Join-Jobbot-Mac.app.zip` / `Join-Jobbot-Mac.command` (לחיצה ימנית ← פתח).
+לחיצה ימנית על `Jobbot.app` ← **פתח**. גם: `Join-Jobbot-Mac.app.zip` / `.command`.
 
 ---
 
-## ב. הגשות אמיתיות (חובה!)
+## ב. הגשות אמיתיות + Chrome
 
-בלי זה תראו «לא הוגשה אף מועמדות אמיתית» — זה נכון, לא באג.
+נתיב מאושר:
+`/Users/matan_amar/Library/Application Support/Google/Chrome`
 
-1. **סגור Chrome לגמרי** (Cmd+Q).
-2. ב-Jobbot → **הגדרות** → נתיב Chrome, בדרך כלל:
-   `~/Library/Application Support/Google/Chrome`
-   (או תיקיית `Default` בתוכה).
-3. פתח Chrome → התחבר ל־**LinkedIn** ו־**Indeed**.
-4. סגור Chrome שוב.
-5. לחץ **בדיקת חיבור Chrome** בהגדרות.
-6. הרץ — רק אז יוגשו Easy Apply / הגשות אמיתיות (כשיש אישור במסך).
+1. בהגדרות מלא את הנתיב (או «מלא נתיב Mac ברירת מחדל»).
+2. התחבר ל־LinkedIn / Indeed ב-Chrome הרגיל.
+3. Jobbot **מעתיק** את הפרופיל לעותק נפרד (`chrome-clone`) בלי קבצי נעילה — אחרי סנכרון מוצלח **אפשר להשאיר Chrome פתוח**.
+4. לחץ **בדיקת חיבור Chrome**. אם צריך עדכון סשן: **רענון עותק פרופיל**.
+5. אם מופיע «פתיחה בסשן קיים» / נעילה: סגור לגמרי עם **Cmd+Q** (לא רק חלון), ודא שאין נקודה ב־Dock, ואז רענון.
 
 מייל דוח: `matan4749@gmail.com`. קו״ח כבר בפנים.

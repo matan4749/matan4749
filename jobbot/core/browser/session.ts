@@ -1,5 +1,6 @@
 import { chromium, type BrowserContext, type Page } from "playwright";
 import type { SiteAdapterContext } from "../types";
+import { chromeLaunchErrorHe, isChromeLockError } from "./chrome-lock";
 
 export async function withBrowserPage<T>(
   ctx: SiteAdapterContext,
@@ -9,6 +10,12 @@ export async function withBrowserPage<T>(
     throw new Error("DEMO_MODE_NO_BROWSER");
   }
 
+  // Prefer Jobbot clone so Matan's live Chrome can stay open
+  const profileDir = ctx.jobbotChromeProfileDir || ctx.chromeUserDataDir;
+  if (!profileDir) {
+    throw new Error("לא הוגדר נתיב Chrome");
+  }
+
   const launchOptions = {
     headless: false,
     channel: "chrome" as const,
@@ -16,23 +23,24 @@ export async function withBrowserPage<T>(
   };
 
   let context: BrowserContext;
-
-  if (ctx.chromeUserDataDir) {
-    context = await chromium.launchPersistentContext(ctx.chromeUserDataDir, {
+  try {
+    context = await chromium.launchPersistentContext(profileDir, {
       ...launchOptions,
       viewport: { width: 1280, height: 900 },
     });
-  } else {
-    const browser = await chromium.launch(launchOptions);
-    context = await browser.newContext({
-      viewport: { width: 1280, height: 900 },
-    });
+  } catch (err) {
+    throw new Error(chromeLaunchErrorHe(err));
   }
 
   const page = context.pages()[0] ?? (await context.newPage());
 
   try {
     return await fn(page, context);
+  } catch (err) {
+    if (isChromeLockError(err)) {
+      throw new Error(chromeLaunchErrorHe(err));
+    }
+    throw err;
   } finally {
     await context.close().catch(() => undefined);
   }

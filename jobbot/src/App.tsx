@@ -150,15 +150,19 @@ export default function App() {
     await persist({ ...settings, chromeUserDataDir: resolved || chromeHint });
   }
 
-  async function probeChrome() {
+  async function probeChrome(forceSync = false) {
     if (!api || !settings?.chromeUserDataDir?.trim()) {
       setChromeProbeMsg("קודם בחר/הזן נתיב Chrome");
       return;
     }
     setProbing(true);
-    setChromeProbeMsg("בודק… סגור את Chrome אם הוא פתוח");
+    setChromeProbeMsg(
+      forceSync
+        ? "מרענן עותק פרופיל… אם נכשל — סגור Chrome עם Cmd+Q"
+        : "בודק דרך עותק Jobbot (Chrome הרגיל יכול להישאר פתוח אחרי סנכרון)…",
+    );
     try {
-      const r = await api.probeChrome(settings.chromeUserDataDir);
+      const r = await api.probeChrome(settings.chromeUserDataDir, { forceSync });
       setChromeProbeMsg(r.messageHe);
     } catch (err) {
       setChromeProbeMsg(err instanceof Error ? err.message : String(err));
@@ -381,16 +385,23 @@ export default function App() {
                     הגשות אמיתיות — Chrome
                   </h3>
                   <ol className="hint" style={{ margin: 0, paddingInlineStart: 18, lineHeight: 1.7 }}>
-                    <li>סגור לגמרי את Chrome (Cmd+Q) לפני בדיקה/ריצה.</li>
                     <li>
                       בחר תיקיית הפרופיל — ב־Mac בדרך כלל:
                       <br />
                       <code>{chromeHint}</code>
                       <br />
-                      (לפעמים תת־תיקייה <code>Default</code> בתוך Chrome).
+                      (או <code>/Users/matan_amar/Library/Application Support/Google/Chrome</code>).
                     </li>
-                    <li>פתח Chrome מאותו פרופיל → התחבר ל־LinkedIn ו־Indeed.</li>
-                    <li>סגור Chrome שוב → לחץ «בדיקת חיבור Chrome» → הרץ.</li>
+                    <li>התחבר ל־LinkedIn ו־Indeed ב-Chrome הרגיל שלך.</li>
+                    <li>
+                      Jobbot מעתיק את הפרופיל לתיקייה נפרדת (בלי SingletonLock) — אחרי סנכרון
+                      מוצלח אפשר להשאיר את Chrome פתוח.
+                    </li>
+                    <li>
+                      אם מופיעה שגיאת «פתיחה בסשן קיים» / נעילה: סגור לגמרי עם{" "}
+                      <strong>Cmd+Q</strong> (לא רק חלון), ודא שאין נקודה ב־Dock, ואז «רענון עותק
+                      פרופיל».
+                    </li>
                   </ol>
                 </div>
 
@@ -416,14 +427,22 @@ export default function App() {
                       type="button"
                       className="btn btn-primary"
                       disabled={probing || !settings.chromeUserDataDir.trim()}
-                      onClick={() => void probeChrome()}
+                      onClick={() => void probeChrome(false)}
                     >
                       {probing ? "בודק…" : "בדיקת חיבור Chrome"}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn"
+                      disabled={probing || !settings.chromeUserDataDir.trim()}
+                      onClick={() => void probeChrome(true)}
+                    >
+                      רענון עותק פרופיל
                     </button>
                   </div>
                   {chromeProbeMsg && <p className="hint">{chromeProbeMsg}</p>}
                   <p className="hint">
-                    Jobbot לא מבקש סיסמאות — רק משתמש בסשן שכבר מחובר ב-Chrome שלך.
+                    Jobbot לא מבקש סיסמאות — מעתיק סשן מחובר לעותק פרטי ופותח אותו בנפרד.
                   </p>
                 </div>
 

@@ -44,7 +44,10 @@ export interface SiteSearchParams {
 
 export interface SiteAdapterContext {
   demo: boolean;
+  /** Source Chrome user-data-dir (Matan's real profile) */
   chromeUserDataDir?: string;
+  /** Jobbot-owned clone used for launchPersistentContext (avoids SingletonLock) */
+  jobbotChromeProfileDir?: string;
   cvPath?: string;
   timeoutMs: number;
   knowledge: SiteKnowledge;

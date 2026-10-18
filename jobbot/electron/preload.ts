@@ -49,7 +49,10 @@ export interface JobbotApi {
   openPath: (p: string) => Promise<string>;
   getDataDir: () => Promise<string>;
   getChromeHint: () => Promise<string>;
-  probeChrome: (chromeUserDataDir: string) => Promise<ChromeProbeResult>;
+  probeChrome: (
+    chromeUserDataDir: string,
+    opts?: { forceSync?: boolean },
+  ) => Promise<ChromeProbeResult>;
   resolveChromePath: (raw: string) => Promise<string>;
   isPackaged: () => Promise<boolean>;
   onProgress: (cb: (progress: RunProgress) => void) => () => void;
@@ -70,7 +73,8 @@ const api: JobbotApi = {
   openPath: (p) => ipcRenderer.invoke("shell:openPath", p),
   getDataDir: () => ipcRenderer.invoke("app:dataDir"),
   getChromeHint: () => ipcRenderer.invoke("chrome:defaultHint"),
-  probeChrome: (chromeUserDataDir) => ipcRenderer.invoke("chrome:probe", chromeUserDataDir),
+  probeChrome: (chromeUserDataDir, opts) =>
+    ipcRenderer.invoke("chrome:probe", chromeUserDataDir, opts),
   resolveChromePath: (raw) => ipcRenderer.invoke("chrome:resolvePath", raw),
   isPackaged: () => ipcRenderer.invoke("app:isPackaged"),
   onProgress: (cb) => {

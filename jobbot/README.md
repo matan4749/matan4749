@@ -1,54 +1,26 @@
 # Jobbot
 
-אוטומציית חיפוש והגשת משרות מקומית עבור **מתן עמר**.
+אוטומציית חיפוש והגשת משרות מקומית עבור **מתן עמר** · **macOS first**.
 
-## למשתמש — התקנה בלחיצה (בלי טרמינל)
+## למשתמש — Mac (בלי טרמינל)
 
-1. קבל קובץ מתיקיית `jobbot/release/` אחרי בנייה:
-   - **Windows (מומלץ):** `Jobbot-Portable-0.1.0.exe` — לחיצה כפולה
-   - **Windows (תיקייה):** `Jobbot-Windows-x64.zip` — חלץ ולחץ על `Jobbot.exe`
-   - **Linux:** `Jobbot-0.1.0.AppImage` — סמן כהרצה ולחץ פעמיים
-2. פתח את **Jobbot** (קיצור שולחן עבודה / התחל נוצר כשמשתמשים ב-NSIS Setup על מכונת Windows עם Wine)
-3. בהגדרות ודא:
-   - מייל דוח: `matan4749@gmail.com` (כבר ברירת מחדל)
-   - קו״ח: כבר מוטמע
-   - Chrome user-data-dir: אחרי שהתחברת לאתרים ב-Chrome
+1. Project store `media/`: חלקי zip + `Join-Jobbot-Mac.command`  
+   או קובץ מלא: `jobbot/release/Jobbot-0.1.0-mac-arm64.zip`
+2. Join (אם חלקים) → חלץ → **Jobbot.app** → Open
+3. Gatekeeper: Right-click → Open (unsigned CI build)
 
-**אין צורך ב-`npm install` לשימוש רגיל.**
+Intel: `Jobbot-0.1.0-mac-x64.zip`. Windows/Linux משניים — ראו `docs/INSTALL.md`.
 
----
+## Defaults
 
-## אתרים
+- Email: `matan4749@gmail.com`
+- CV: bundled
+- Sites: LinkedIn, Indeed, AllJobs, Drushim, Elbit, IAI (לא GotFriends/Easy)
 
-פעילים: LinkedIn, Indeed, AllJobs, Drushim, אלביט, תע״א.
-
-**לא כלולים:** GotFriends, Easy (easy.co.il).
-
-## מייל מובנה
-
-יעד ברירת מחדל: **matan4749@gmail.com**. בלי הגדרת SMTP מצד המשתמש.
-
-## קורות חיים
-
-מוטמע מ-`/cursor/stores/self/cv/matan-amar-cv.pdf` → `assets/cv/matan-amar-cv.pdf`.
-
----
-
-## למפתחים — בניית חבילה
+## Developers
 
 ```bash
-cd jobbot
-npm install
-npm run dist:win      # Windows portable + Setup → release/
-npm run dist:linux    # AppImage → release/
-npm run dist:dir      # unpacked dir (בדיקה מקומית)
+cd jobbot && npm install
+npm run dist:mac          # primary
+JOBBOT_DEMO=1 npm run dev # optional
 ```
-
-פיתוח (לא למשתמש קצה):
-
-```bash
-JOBBOT_DEMO=1 npm run dev
-npm run demo:run
-```
-
-פירוט: Project store `docs/jobbot-plan.md`.

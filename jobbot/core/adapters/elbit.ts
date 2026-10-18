@@ -94,15 +94,22 @@ export const elbitAdapter: SiteAdapter = {
 
   async apply(job: JobListing, ctx: SiteAdapterContext): Promise<ApplyResult> {
     const method = await this.detectApplyMethod(job, ctx);
-    if (ctx.demo || !ctx.chromeUserDataDir) {
-      const result = await demoApply(job, ctx, method);
-      if (result.status === "failed") {
-        result.reason = `STUB_ADAPTER(elbit): ${result.reason}`;
-      }
-      return result;
+    const started = Date.now();
+    // Stub until live: never claim a real submit
+    if (ctx.demo || !ctx.chromeUserDataDir || this.status === "stub") {
+      if (ctx.demo || !ctx.chromeUserDataDir) return demoApply(job, ctx, method);
+      const reason = "לא מיושם עדיין — אדפטר אלביט (stub); לא הוגשה מועמדות";
+      ctx.log("warn", `⚠ אלביט: ${reason}`);
+      return {
+        job,
+        status: "not_implemented",
+        method,
+        reason,
+        durationMs: Date.now() - started,
+        confirmed: false,
+      };
     }
 
-    const started = Date.now();
     try {
       return await withBrowserPage(ctx, async (page) => {
         await page.goto(job.url, { waitUntil: "domcontentloaded", timeout: ctx.timeoutMs });
@@ -117,7 +124,15 @@ export const elbitAdapter: SiteAdapter = {
           const files = page.locator('input[type="file"]');
           if ((await files.count()) > 0) await files.first().setInputFiles(ctx.cvPath);
         }
-        return { job, status: "applied", method, durationMs: Date.now() - started };
+        // Live path still requires confirmation before applied — until then unknown
+        return {
+          job,
+          status: "unknown",
+          method,
+          reason: "זרימת אלביט חיה עדיין ללא אימות מסך אישור",
+          durationMs: Date.now() - started,
+          confirmed: false,
+        };
       });
     } catch (err) {
       return {
@@ -126,6 +141,7 @@ export const elbitAdapter: SiteAdapter = {
         method,
         reason: err instanceof Error ? err.message : String(err),
         durationMs: Date.now() - started,
+        confirmed: false,
       };
     }
   },

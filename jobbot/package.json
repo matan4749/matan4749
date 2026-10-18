@@ -13,6 +13,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.electron.json --noEmit",
     "demo": "JOBBOT_DEMO=1 vite",
     "demo:run": "JOBBOT_DEMO=1 tsx scripts/demo-run.ts",
+    "test": "tsx --test core/adapters/reliability.test.ts",
     "start": "electron .",
     "dist": "npm run build && electron-builder --publish never",
     "dist:win": "npm run build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --win zip portable nsis --x64 --publish never",

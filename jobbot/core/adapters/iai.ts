@@ -95,15 +95,21 @@ export const iaiAdapter: SiteAdapter = {
 
   async apply(job: JobListing, ctx: SiteAdapterContext): Promise<ApplyResult> {
     const method = await this.detectApplyMethod(job, ctx);
-    if (ctx.demo || !ctx.chromeUserDataDir) {
-      const result = await demoApply(job, ctx, method);
-      if (result.status === "failed") {
-        result.reason = `STUB_ADAPTER(iai): ${result.reason}`;
-      }
-      return result;
+    const started = Date.now();
+    if (ctx.demo || !ctx.chromeUserDataDir || this.status === "stub") {
+      if (ctx.demo || !ctx.chromeUserDataDir) return demoApply(job, ctx, method);
+      const reason = "לא מיושם עדיין — אדפטר תע״א (stub); לא הוגשה מועמדות";
+      ctx.log("warn", `⚠ תע״א: ${reason}`);
+      return {
+        job,
+        status: "not_implemented",
+        method,
+        reason,
+        durationMs: Date.now() - started,
+        confirmed: false,
+      };
     }
 
-    const started = Date.now();
     try {
       return await withBrowserPage(ctx, async (page) => {
         await page.goto(job.url, { waitUntil: "domcontentloaded", timeout: ctx.timeoutMs });
@@ -119,7 +125,14 @@ export const iaiAdapter: SiteAdapter = {
           const files = page.locator('input[type="file"]');
           if ((await files.count()) > 0) await files.first().setInputFiles(ctx.cvPath);
         }
-        return { job, status: "applied", method, durationMs: Date.now() - started };
+        return {
+          job,
+          status: "unknown",
+          method,
+          reason: "זרימת תע״א חיה עדיין ללא אימות מסך אישור",
+          durationMs: Date.now() - started,
+          confirmed: false,
+        };
       });
     } catch (err) {
       return {
@@ -128,6 +141,7 @@ export const iaiAdapter: SiteAdapter = {
         method,
         reason: err instanceof Error ? err.message : String(err),
         durationMs: Date.now() - started,
+        confirmed: false,
       };
     }
   },

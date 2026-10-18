@@ -1,5 +1,5 @@
 import type { SiteAdapter, SiteKind } from "./types";
-import { demoApply, demoJobs } from "./demo";
+import { demoJobs } from "./demo";
 import type { ApplyMethod, ApplyResult, JobListing, SiteAdapterContext, SiteSearchParams } from "../types";
 
 function makeStub(opts: {
@@ -18,7 +18,7 @@ function makeStub(opts: {
       const kindLabel = opts.siteKind === "career-portal" ? "פורטל קריירה" : "לוח משרות";
       ctx.log(
         "info",
-        `${opts.displayNameHe} (${kindLabel}): stub — התחבר ב-Chrome לפרופיל, ואז נחבר סלקטורים`,
+        `${opts.displayNameHe} (${kindLabel}): stub — חיפוש לדוגמה בלבד, בלי הגשה`,
       );
       if (opts.careersUrl) {
         ctx.log("info", `${opts.displayNameHe}: ${opts.careersUrl}`);
@@ -36,11 +36,18 @@ function makeStub(opts: {
 
     async apply(job: JobListing, ctx: SiteAdapterContext): Promise<ApplyResult> {
       const method = await this.detectApplyMethod(job, ctx);
-      const result = await demoApply(job, ctx, method);
-      if (result.status === "failed") {
-        result.reason = `STUB_ADAPTER: ${result.reason || "not implemented"}`;
-      }
-      return result;
+      const started = Date.now();
+      const reason = `לא מיושם עדיין — אדפטר stub ל-${opts.displayNameHe}; לא הוגשה מועמדות`;
+      ctx.log("warn", `⚠ ${opts.displayNameHe}: ${reason}`);
+      return {
+        job,
+        status: "not_implemented",
+        method,
+        reason,
+        durationMs: Date.now() - started,
+        confirmed: false,
+        simulated: false,
+      };
     },
   };
 }

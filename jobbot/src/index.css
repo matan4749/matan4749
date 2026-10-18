@@ -128,9 +128,12 @@ a {
   height: 100%;
   display: grid;
   grid-template-rows: auto 1fr;
+  pointer-events: auto;
 }
 
 .topnav {
+  position: relative;
+  z-index: 2;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -138,6 +141,7 @@ a {
   border-bottom: 1px solid var(--line);
   backdrop-filter: blur(10px);
   background: rgba(4, 16, 22, 0.45);
+  pointer-events: auto;
 }
 
 .brand-mark {
@@ -350,9 +354,15 @@ a {
 
 .stats {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 10px;
   margin-bottom: 14px;
+}
+
+@media (max-width: 960px) {
+  .stats {
+    grid-template-columns: repeat(2, 1fr);
+  }
 }
 
 .stat {

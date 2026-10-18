@@ -248,13 +248,22 @@ export default function App() {
                   </div>
                   <div className="stat">
                     <strong>{progress.applied}</strong>
-                    <span>הוגשו</span>
+                    <span>הוגשו באמת</span>
                   </div>
                   <div className="stat">
                     <strong>{progress.failed}</strong>
                     <span>נכשלו</span>
                   </div>
+                  <div className="stat">
+                    <strong>{progress.skipped}</strong>
+                    <span>לא הוגש</span>
+                  </div>
                 </div>
+                {progress.phase === "done" && progress.applied === 0 && (
+                  <p className="hint" style={{ color: "var(--danger)" }}>
+                    לא הוגשה אף מועמדות אמיתית בריצה זו — סטטוסים אחרים אינם הצלחה.
+                  </p>
+                )}
 
                 <div className="cta-row">
                   {!running ? (

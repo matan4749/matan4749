@@ -15,38 +15,33 @@ export function demoJobs(site: string, params: SiteSearchParams): JobListing[] {
   }));
 }
 
+/**
+ * Demo / offline path — NEVER returns status "applied".
+ * Always honest: skipped + simulated, with a clear Hebrew reason.
+ */
 export async function demoApply(
   job: JobListing,
   ctx: SiteAdapterContext,
   method: ApplyResult["method"],
 ): Promise<ApplyResult> {
   const started = Date.now();
-  await sleep(400 + Math.random() * 600, ctx.signal);
+  await sleep(200 + Math.random() * 300, ctx.signal);
 
-  // Deterministic-ish failure for learning demos (~20%)
-  const fail = hashFail(job.id);
-  if (fail) {
-    return {
-      job,
-      status: "failed",
-      method,
-      reason: "DEMO_SELECTOR_TIMEOUT: button.apply not found",
-      durationMs: Date.now() - started,
-    };
-  }
+  const reason = ctx.demo
+    ? "הדגמה בלבד (JOBBOT_DEMO) — לא הוגשה מועמדות אמיתית"
+    : "אין פרופיל Chrome מחובר — לא בוצעה הגשה אמיתית";
+
+  ctx.log("warn", `⚠ לא הוגש (הדגמה): ${job.title} — ${reason}`);
 
   return {
     job,
-    status: "applied",
+    status: "skipped",
     method,
+    reason,
     durationMs: Date.now() - started,
+    confirmed: false,
+    simulated: true,
   };
-}
-
-function hashFail(id: string): boolean {
-  let h = 0;
-  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
-  return h % 5 === 0;
 }
 
 function abortError(): Error {

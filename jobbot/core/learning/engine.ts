@@ -75,7 +75,7 @@ export class LearningEngine {
         if (same >= 5 && !sk.skipSteps.includes(step)) {
           sk.skipSteps.push(step);
         }
-      } else if (r.status === "applied") {
+      } else if (r.status === "applied" && r.confirmed && !r.simulated) {
         const hint: SuccessHint = {
           site,
           step: "apply",

@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { getAdapter, listAdapters } from "../adapters/registry";
+import { listAdapters } from "../adapters/registry";
+import { sanitizeApplyResult, isRealApplied } from "../adapters/sanitize";
 import { LearningEngine } from "../learning/engine";
 import { buildReportHtml } from "../email/report";
 import { sendReportEmail } from "../email/send";
@@ -152,19 +153,38 @@ export class JobRunner {
         }
 
         if (!result) continue;
+        result = sanitizeApplyResult(result, adapter, ctx.demo);
         allResults.push(result);
         this.progress.results = [...allResults];
 
-        if (result.status === "applied") {
+        if (isRealApplied(result)) {
           this.patch({ applied: this.progress.applied + 1 });
-          this.log("info", `✓ הוגש: ${job.title}`);
+          this.log("info", `✓ הוגש באמת (אומת): ${job.title}`);
         } else if (result.status === "failed") {
           this.patch({ failed: this.progress.failed + 1 });
           this.log("error", `✗ נכשל: ${job.title} — ${result.reason}`);
+        } else if (result.status === "unknown") {
+          this.patch({ skipped: this.progress.skipped + 1 });
+          this.log("warn", `? לא אומת: ${job.title} — ${result.reason}`);
+        } else if (result.status === "not_implemented") {
+          this.patch({ skipped: this.progress.skipped + 1 });
+          this.log("warn", `○ לא מיושם: ${job.title} — ${result.reason}`);
         } else {
           this.patch({ skipped: this.progress.skipped + 1 });
+          this.log(
+            "warn",
+            `○ לא הוגש: ${job.title} — ${result.reason || result.status}${result.simulated ? " [הדגמה]" : ""}`,
+          );
         }
       }
+    }
+
+    const realApplied = allResults.filter(isRealApplied).length;
+    if (realApplied === 0) {
+      this.log(
+        "warn",
+        "סיכום אמין: לא הוגשה אף מועמדות אמיתית בריצה זו (0 הגשות מאומתות)",
+      );
     }
 
     // Learning loop

@@ -1,6 +1,16 @@
 export type ApplyMethod = "chrome-session" | "cv-upload" | "unknown";
 
-export type JobStatus = "found" | "applied" | "failed" | "skipped";
+/**
+ * Reliability rule: `applied` is ONLY for a verified real submission.
+ * Demo/stub paths must never emit `applied`.
+ */
+export type JobStatus =
+  | "found"
+  | "applied"
+  | "failed"
+  | "skipped"
+  | "not_implemented"
+  | "unknown";
 
 export type SearchMode = "cv" | "keywords";
 
@@ -20,6 +30,10 @@ export interface ApplyResult {
   method: ApplyMethod;
   reason?: string;
   durationMs: number;
+  /** True only when UI/network confirmation of a real submit was observed */
+  confirmed?: boolean;
+  /** True for demo/mock paths — must never be counted as a real submit */
+  simulated?: boolean;
 }
 
 export interface SiteSearchParams {

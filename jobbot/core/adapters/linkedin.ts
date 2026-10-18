@@ -1,5 +1,6 @@
 import type { SiteAdapter } from "./types";
 import { demoApply, demoJobs } from "./demo";
+import { detectApplyConfirmation } from "./confirm";
 import { clickFirst, fillFirst, pickSelector, withBrowserPage } from "../browser/session";
 import type { ApplyMethod, ApplyResult, JobListing, SiteAdapterContext, SiteSearchParams } from "../types";
 
@@ -129,11 +130,27 @@ export const linkedinAdapter: SiteAdapter = {
           await clickFirst(page, submit, 15000);
         }
 
+        const { confirmed, matched } = await detectApplyConfirmation(page, ctx);
+        if (!confirmed) {
+          ctx.log("warn", "LinkedIn: אין אישור הגשה במסך — לא מסומן כהצלחה");
+          return {
+            job,
+            status: "unknown",
+            method,
+            reason: "לא אומתה הגשה — לא נמצא מסך/הודעת אישור אחרי שליחה",
+            durationMs: Date.now() - started,
+            confirmed: false,
+          };
+        }
+
+        ctx.log("info", `LinkedIn: אומתה הגשה (${matched})`);
         return {
           job,
           status: "applied",
           method,
+          reason: `אושר במסך: ${matched}`,
           durationMs: Date.now() - started,
+          confirmed: true,
         };
       });
     } catch (err) {
@@ -144,6 +161,7 @@ export const linkedinAdapter: SiteAdapter = {
         method,
         reason,
         durationMs: Date.now() - started,
+        confirmed: false,
       };
     }
   },

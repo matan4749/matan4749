@@ -1,77 +1,54 @@
 # Jobbot
 
-אוטומציית חיפוש והגשת משרות מקומית עבור **מתן עמר** · Local desktop job-application automation.
+אוטומציית חיפוש והגשת משרות מקומית עבור **מתן עמר**.
 
-UI: **עברית (RTL)** · Electron + React + Playwright + site adapters + learning KB + **built-in email**.
+## למשתמש — התקנה בלחיצה (בלי טרמינל)
 
-## Quick start / התחלה מהירה
+1. קבל קובץ מתיקיית `jobbot/release/` אחרי בנייה:
+   - **Windows (מומלץ):** `Jobbot-Portable-0.1.0.exe` — לחיצה כפולה
+   - **Windows (תיקייה):** `Jobbot-Windows-x64.zip` — חלץ ולחץ על `Jobbot.exe`
+   - **Linux:** `Jobbot-0.1.0.AppImage` — סמן כהרצה ולחץ פעמיים
+2. פתח את **Jobbot** (קיצור שולחן עבודה / התחל נוצר כשמשתמשים ב-NSIS Setup על מכונת Windows עם Wine)
+3. בהגדרות ודא:
+   - מייל דוח: `matan4749@gmail.com` (כבר ברירת מחדל)
+   - קו״ח: כבר מוטמע
+   - Chrome user-data-dir: אחרי שהתחברת לאתרים ב-Chrome
+
+**אין צורך ב-`npm install` לשימוש רגיל.**
+
+---
+
+## אתרים
+
+פעילים: LinkedIn, Indeed, AllJobs, Drushim, אלביט, תע״א.
+
+**לא כלולים:** GotFriends, Easy (easy.co.il).
+
+## מייל מובנה
+
+יעד ברירת מחדל: **matan4749@gmail.com**. בלי הגדרת SMTP מצד המשתמש.
+
+## קורות חיים
+
+מוטמע מ-`/cursor/stores/self/cv/matan-amar-cv.pdf` → `assets/cv/matan-amar-cv.pdf`.
+
+---
+
+## למפתחים — בניית חבילה
 
 ```bash
 cd jobbot
 npm install
-npx playwright install chromium
-JOBBOT_DEMO=1 npm run dev
+npm run dist:win      # Windows portable + Setup → release/
+npm run dist:linux    # AppImage → release/
+npm run dist:dir      # unpacked dir (בדיקה מקומית)
 ```
 
-Headless demo (no window):
+פיתוח (לא למשתמש קצה):
 
 ```bash
-npx tsx scripts/demo-run.ts
+JOBBOT_DEMO=1 npm run dev
+npm run demo:run
 ```
 
-## קורות חיים / CV
-
-Default CV is already wired:
-
-| Source | Path |
-|--------|------|
-| Project store (canonical) | `/cursor/stores/self/cv/matan-amar-cv.pdf` |
-| Bundled in app | `jobbot/assets/cv/matan-amar-cv.pdf` |
-
-On first launch the app seeds a copy into its data dir and sets `cvPath` automatically. Used for **CV-based keyword matching** and **file uploads** on apply flows. Override anytime in **הגדרות**.
-
-## Chrome profile (no passwords)
-
-1. Open the site list in Settings (LinkedIn, Indeed, boards, Elbit, IAI…).
-2. Log into those sites yourself in Chrome.
-3. Quit Chrome fully.
-4. Set **Chrome user-data-dir** in Jobbot settings.
-
-Jobbot never asks for site passwords — it reuses your logged-in profile via Playwright persistent context.
-
-## Built-in email (no user SMTP)
-
-You only set the **destination address** in Settings (`reportEmail`).
-
-Sending uses an **app-owned** mailer:
-
-1. Resend API via `JOBBOT_MAIL_API_KEY` + `JOBBOT_MAIL_FROM`, or
-2. App SMTP relay via `JOBBOT_MAIL_SMTP_*` (maintainer env — not shown in UI).
-
-Every report is also saved under `outbox/` + shown in the **דוח** tab.
-
-## Sites
-
-**Boards:** LinkedIn (live), Indeed (live), AllJobs / Drushim / GotFriends (stubs).
-
-**Company career portals:** אלביט / Elbit Systems, תעשייה אווירית / IAI (stubs + learning hooks).
-
-## Search modes
-
-1. **מילות מפתח** — pick all or a subset.
-2. **מקו״ח** — analyze Matan’s CV → suggested keywords → search.
-
-## Learning
-
-Failures update a local knowledge base for the next run. See [`docs/LEARNING.md`](docs/LEARNING.md).
-
-## Scripts
-
-| Command | Meaning |
-|---------|---------|
-| `npm run dev` | Electron + Vite |
-| `JOBBOT_DEMO=1 npm run dev` | Demo mode |
-| `npm run demo:run` | Headless demo |
-| `npm run typecheck` | TypeScript |
-
-Plan: Project store `docs/jobbot-plan.md`.
+פירוט: Project store `docs/jobbot-plan.md`.

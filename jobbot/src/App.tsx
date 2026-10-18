@@ -337,9 +337,9 @@ export default function App() {
                   <input
                     value={settings.reportEmail}
                     onChange={(e) => setSettings({ ...settings, reportEmail: e.target.value })}
-                    placeholder="you@example.com"
+                    placeholder="matan4749@gmail.com"
                   />
-                  <p className="hint">אין צורך בהגדרת SMTP — רק כתובת היעד.</p>
+                  <p className="hint">ברירת מחדל: matan4749@gmail.com · אין צורך ב-SMTP.</p>
                 </div>
 
                 <div className="field">

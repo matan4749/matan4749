@@ -13,9 +13,12 @@ let runner: JobRunner | null = null;
 let lastReportHtml = "";
 
 function appRoot(): string {
-  // Dev: project root; packaged: resources
+  // Dev: project root; packaged: asar / resources sibling
   if (process.env.VITE_DEV_SERVER_URL) {
     return path.join(__dirname, "..");
+  }
+  if (app.isPackaged) {
+    return process.resourcesPath;
   }
   return app.getAppPath();
 }

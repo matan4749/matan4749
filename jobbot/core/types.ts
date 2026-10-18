@@ -108,10 +108,13 @@ export interface AppSettings {
   sendEmailAfterRun: boolean;
 }
 
+/** Sites the user explicitly does not use — never register or enable these */
+export const EXCLUDED_SITES = ["gotfriends", "easy"] as const;
+
 export const DEFAULT_SETTINGS: AppSettings = {
   cvPath: "",
   chromeUserDataDir: "",
-  reportEmail: "",
+  reportEmail: "matan4749@gmail.com",
   keywords: [
     "Full Stack Developer",
     "React",
@@ -122,15 +125,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
     "מהנדס תוכנה",
   ],
   location: "Israel",
-  enabledSites: [
-    "linkedin",
-    "indeed",
-    "alljobs",
-    "drushim",
-    "gotfriends",
-    "elbit",
-    "iai",
-  ],
+  enabledSites: ["linkedin", "indeed", "alljobs", "drushim", "elbit", "iai"],
   jobLimitPerSite: 5,
   sendEmailAfterRun: true,
 };

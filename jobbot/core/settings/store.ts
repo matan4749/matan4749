@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { DEFAULT_SETTINGS, type AppSettings } from "../types";
+import { DEFAULT_SETTINGS, EXCLUDED_SITES, type AppSettings } from "../types";
 import { resolveDefaultCvPath } from "../cv/paths";
 
 export function settingsPath(dataDir: string): string {
@@ -10,7 +10,7 @@ export function settingsPath(dataDir: string): string {
 function envDefaults(appRoot?: string): AppSettings {
   return {
     ...DEFAULT_SETTINGS,
-    reportEmail: process.env.JOBBOT_REPORT_EMAIL || "",
+    reportEmail: process.env.JOBBOT_REPORT_EMAIL || DEFAULT_SETTINGS.reportEmail,
     cvPath: resolveDefaultCvPath(process.env.JOBBOT_CV_PATH, appRoot),
     chromeUserDataDir: process.env.JOBBOT_CHROME_PROFILE || "",
   };
@@ -25,20 +25,24 @@ function normalize(
   const { smtp: _legacy, ...rest } = raw;
   void _legacy;
   const cvPath = resolveDefaultCvPath(rest.cvPath || base.cvPath, appRoot);
+  const reportEmail =
+    (rest.reportEmail && rest.reportEmail.trim()) || base.reportEmail;
   return {
     ...base,
     ...rest,
     cvPath,
+    reportEmail,
     enabledSites:
       rest.enabledSites && rest.enabledSites.length
-        ? ensureCareerSites(rest.enabledSites)
+        ? sanitizeSites(rest.enabledSites)
         : base.enabledSites,
   };
 }
 
-/** Ensure Elbit + IAI stay in the list when migrating older settings */
-function ensureCareerSites(sites: string[]): string[] {
-  const next = [...sites];
+/** Drop excluded sites; ensure Elbit + IAI remain available */
+function sanitizeSites(sites: string[]): string[] {
+  const excluded = new Set<string>(EXCLUDED_SITES);
+  const next = sites.filter((id) => !excluded.has(id));
   for (const id of ["elbit", "iai"]) {
     if (!next.includes(id)) next.push(id);
   }

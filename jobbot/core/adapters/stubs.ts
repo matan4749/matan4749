@@ -63,11 +63,4 @@ export const drushimAdapter = makeStub({
   careersUrl: "https://www.drushim.co.il/",
 });
 
-export const gotfriendsAdapter = makeStub({
-  id: "gotfriends",
-  displayName: "GotFriends",
-  displayNameHe: "גוטפרינדס",
-  defaultApplyMethod: "cv-upload",
-  siteKind: "board",
-  careersUrl: "https://www.gotfriends.co.il/",
-});
+/* GotFriends + Easy (easy.co.il) removed — user has no accounts on those sites */

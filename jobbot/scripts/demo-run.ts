@@ -27,7 +27,7 @@ async function main() {
       ...DEFAULT_SETTINGS,
       cvPath,
       sendEmailAfterRun: true,
-      reportEmail: process.env.JOBBOT_REPORT_EMAIL || "demo@jobbot.local",
+      reportEmail: process.env.JOBBOT_REPORT_EMAIL || "matan4749@gmail.com",
       enabledSites: ["linkedin", "indeed", "elbit", "iai"],
     },
     {

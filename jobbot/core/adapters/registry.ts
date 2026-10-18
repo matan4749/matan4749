@@ -1,16 +1,16 @@
 import type { SiteAdapter } from "./types";
 import { linkedinAdapter } from "./linkedin";
 import { indeedAdapter } from "./indeed";
-import { alljobsAdapter, drushimAdapter, gotfriendsAdapter } from "./stubs";
+import { alljobsAdapter, drushimAdapter } from "./stubs";
 import { elbitAdapter } from "./elbit";
 import { iaiAdapter } from "./iai";
 
+/** GotFriends + Easy (easy.co.il) intentionally omitted — user has no accounts there */
 const adapters: SiteAdapter[] = [
   linkedinAdapter,
   indeedAdapter,
   alljobsAdapter,
   drushimAdapter,
-  gotfriendsAdapter,
   elbitAdapter,
   iaiAdapter,
 ];

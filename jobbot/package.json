@@ -13,7 +13,13 @@
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.electron.json --noEmit",
     "demo": "JOBBOT_DEMO=1 vite",
     "demo:run": "JOBBOT_DEMO=1 tsx scripts/demo-run.ts",
-    "start": "electron ."
+    "start": "electron .",
+    "dist": "npm run build && electron-builder --publish never",
+    "dist:win": "npm run build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --win zip portable nsis --x64 --publish never",
+    "dist:win:zip": "npm run build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --win zip --x64 --publish never",
+    "dist:linux": "npm run build && electron-builder --linux AppImage --x64 --publish never",
+    "dist:dir": "npm run build && electron-builder --dir --publish never",
+    "pack:win-folder": "npm run build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --win dir --x64 --publish never && node scripts/zip-win-unpacked.mjs"
   },
   "dependencies": {
     "nodemailer": "^6.9.16",
@@ -31,10 +37,81 @@
     "@types/uuid": "^10.0.0",
     "@vitejs/plugin-react": "^4.3.4",
     "electron": "^33.2.1",
+    "electron-builder": "^25.1.8",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",
     "vite": "^6.0.3",
     "vite-plugin-electron": "^0.28.8",
     "vite-plugin-electron-renderer": "^0.14.6"
+  },
+  "build": {
+    "appId": "life.matan.jobbot",
+    "productName": "Jobbot",
+    "copyright": "Copyright © Matan Amar",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "assets/cv",
+        "to": "cv"
+      }
+    ],
+    "asar": true,
+    "win": {
+      "signAndEditExecutable": false,
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "Jobbot-Setup-${version}-${os}.${ext}"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Jobbot",
+      "uninstallDisplayName": "Jobbot"
+    },
+    "portable": {
+      "artifactName": "Jobbot-Portable-${version}.exe"
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "category": "Office",
+      "artifactName": "Jobbot-${version}.${ext}"
+    },
+    "mac": {
+      "target": [
+        "dmg"
+      ],
+      "artifactName": "Jobbot-${version}.${ext}"
+    }
   }
 }

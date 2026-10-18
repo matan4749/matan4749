@@ -1,16 +1,20 @@
-# Jobbot for Mac
+# Jobbot ל-Mac — התקנה בלי טרמינל
 
-**Primary (Apple Silicon M1/M2/M3/M4):**
+## מה להוריד (לאותה תיקייה)
 
-1. Put these in the same folder:
-   - `Jobbot-0.1.0-mac-arm64.zip.part00`
-   - `Jobbot-0.1.0-mac-arm64.zip.part01`
-   - `Jobbot-0.1.0-mac-arm64.zip.part02`
-   - `Join-Jobbot-Mac.command`
-2. Double-click **Join-Jobbot-Mac.command** → creates `Jobbot-mac.zip`
-3. Double-click **Jobbot-mac.zip** → open **Jobbot.app**
-4. If Gatekeeper blocks: Right-click Jobbot.app → **Open** (unsigned Linux-built binary)
+1. `Jobbot-0.1.0-mac-arm64.zip.part00`
+2. `Jobbot-0.1.0-mac-arm64.zip.part01`
+3. `Jobbot-0.1.0-mac-arm64.zip.part02`
+4. `Join-Jobbot-Mac.app.zip`
 
-**Intel Mac:** use `jobbot/release/Jobbot-0.1.0-mac-x64.zip` from the repo workspace / CI artifact.
+## שלבים
 
-**DMG:** not available from this Linux builder (needs macOS for `dmg-license` / notarization).
+1. **לחץ פעמיים** על `Join-Jobbot-Mac.app.zip` → מתקבלת האפליקציה `Join-Jobbot-Mac`.
+2. **לחץ פעמיים** על `Join-Jobbot-Mac` (האפליקציה).
+3. נוצר הקובץ **`Jobbot-mac.zip`** — לחץ עליו פעמיים.
+4. לחץ פעמיים על **`Jobbot.app`**.
+5. אם מופיעה אזהרה: **לחיצה ימנית** על Jobbot.app ← **פתח** ← פתח.
+
+אין צורך בטרמינל וב-chmod.
+
+(Apple Silicon. מחשב Intel: בקש `Jobbot-0.1.0-mac-x64.zip`.)

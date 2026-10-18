@@ -1,46 +1,26 @@
 # Jobbot — התקנה למשתמש (בלי טרמינל)
 
-## Mac (נתיב ראשי)
-
-מתן על **macOS**.
-
-### Apple Silicon (M1 / M2 / M3 / M4) — מומלץ
+## Mac (נתיב ראשי) — Apple Silicon
 
 קבצים ב-Project store `media/`:
 
-1. הורד לאותה תיקייה:
-   - `Jobbot-0.1.0-mac-arm64.zip.part00` … `part02`
-   - `Join-Jobbot-Mac.command`
-2. לחיצה כפולה על **`Join-Jobbot-Mac.command`** → נוצר `Jobbot-mac.zip`
-3. לחיצה כפולה על ה-zip → פתח **`Jobbot.app`**
-4. אם macOS חוסם (בנייה לא חתומה מ-Linux): **לחיצה ימנית על Jobbot.app → Open**
+1. `Jobbot-0.1.0-mac-arm64.zip.part00` … `part02`
+2. `Join-Jobbot-Mac.app.zip`
 
-קובץ מלא גם ב-workspace: `jobbot/release/Jobbot-0.1.0-mac-arm64.zip`
+### שלבים
 
-### Intel Mac
+1. לחץ פעמיים על **`Join-Jobbot-Mac.app.zip`**
+2. לחץ פעמיים על **`Join-Jobbot-Mac`**
+3. לחץ פעמיים על **`Jobbot-mac.zip`** שנוצר
+4. לחץ פעמיים על **`Jobbot.app`**
+5. אם חוסמים: לחיצה ימנית ← **פתח**
 
-`jobbot/release/Jobbot-0.1.0-mac-x64.zip` → חלץ → `Jobbot.app`
+אין טרמינל. אין chmod.
 
-### DMG / חתימה
+חבילה משולבת (חלקים + Join.app): `jobbot/release/Jobbot-Mac-Installer.zip` (גדול מדי ל-media store).
 
-`.dmg` וחתימה/נוטריזציה דורשים בנייה על **Mac** עם Apple Developer ID. ה-Linux CI כאן מייצר `.app` בתוך zip (לא חתום).
+Intel: `jobbot/release/Jobbot-0.1.0-mac-x64.zip`
 
----
+## Windows / Linux — משני
 
-## Windows (משני / אופציונלי)
-
-`Jobbot-Portable-0.1.0.exe` או zip — רק אם צריך Windows.
-
-## Linux (אופציונלי)
-
-`Jobbot-0.1.0.AppImage`
-
----
-
-## אחרי הפתיחה
-
-- מייל דוח: `matan4749@gmail.com`
-- קו״ח מוטמע
-- הגדר Chrome user-data-dir אחרי login לאתרים
-
-**לא כלולים:** GotFriends, Easy.
+ראו README.

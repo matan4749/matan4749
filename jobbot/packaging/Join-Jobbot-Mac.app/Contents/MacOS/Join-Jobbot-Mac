@@ -1,0 +1,44 @@
+#!/bin/bash
+# Join Jobbot Mac zip parts — double-click this .app (no Terminal / no chmod)
+set -euo pipefail
+
+# Folder containing the .app (where the .part files should also live)
+APP_PATH="$(cd "$(dirname "$0")/../../.." && pwd)"
+DIR="$(dirname "$APP_PATH")"
+cd "$DIR"
+
+PART0="Jobbot-0.1.0-mac-arm64.zip.part00"
+PART1="Jobbot-0.1.0-mac-arm64.zip.part01"
+PART2="Jobbot-0.1.0-mac-arm64.zip.part02"
+OUT="Jobbot-mac.zip"
+
+missing=0
+for f in "$PART0" "$PART1" "$PART2"; do
+  if [[ ! -f "$f" ]]; then
+    missing=1
+  fi
+done
+
+if [[ "$missing" -eq 1 ]]; then
+  /usr/bin/osascript <<APPLESCRIPT
+display dialog "לא נמצאו קבצי החלקים (.part00 .part01 .part02) באותה תיקייה עם האפליקציה.
+
+שים את שלושת החלקים ואת Join-Jobbot-Mac.app באותה תיקייה, ואז לחץ שוב." buttons {"אישור"} default button 1 with title "Jobbot" with icon stop
+APPLESCRIPT
+  exit 1
+fi
+
+rm -f "$OUT"
+cat "$PART0" "$PART1" "$PART2" > "$OUT"
+
+/usr/bin/osascript <<APPLESCRIPT
+display dialog "נוצר הקובץ Jobbot-mac.zip
+
+עכשיו:
+1. לחץ פעמיים על Jobbot-mac.zip
+2. לחץ פעמיים על Jobbot.app
+3. אם macOS חוסם: לחיצה ימנית על Jobbot.app ← פתח" buttons {"הצג ב-Finder"} default button 1 with title "Jobbot מוכן"
+APPLESCRIPT
+
+/usr/bin/open -R "$DIR/$OUT"
+exit 0

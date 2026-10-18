@@ -7,19 +7,15 @@
 1. `Jobbot-0.1.0-mac-arm64.zip.part00` … `part02`
 2. `Join-Jobbot-Mac.app.zip`
 
-### שלבים
+### שלבים (חשוב)
 
-1. לחץ פעמיים על **`Join-Jobbot-Mac.app.zip`**
-2. לחץ פעמיים על **`Join-Jobbot-Mac`**
-3. לחץ פעמיים על **`Jobbot-mac.zip`** שנוצר
-4. לחץ פעמיים על **`Jobbot.app`**
-5. אם חוסמים: לחיצה ימנית ← **פתח**
+1. **העבר** את כל הקבצים לתיקייה חדשה בשולחן העבודה (מבטל App Translocation).
+2. לחץ פעמיים על **`Join-Jobbot-Mac.app.zip`**
+3. לחץ פעמיים על **`Join-Jobbot-Mac`**
+4. לחץ פעמיים על **`Jobbot-mac.zip`** שנוצר
+5. לחץ פעמיים על **`Jobbot.app`** · אם חוסמים: לחיצה ימנית ← **פתח**
 
-אין טרמינל. אין chmod.
-
-חבילה משולבת (חלקים + Join.app): `jobbot/release/Jobbot-Mac-Installer.zip` (גדול מדי ל-media store).
-
-Intel: `jobbot/release/Jobbot-0.1.0-mac-x64.zip`
+Join מחפש גם ב־הורדות/שולחן עבודה ומציג בוחר תיקייה אם צריך.
 
 ## Windows / Linux — משני
 

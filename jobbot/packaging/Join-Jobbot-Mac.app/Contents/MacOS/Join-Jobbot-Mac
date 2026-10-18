@@ -1,38 +1,125 @@
 #!/bin/bash
-# Join Jobbot Mac zip parts — double-click this .app (no Terminal / no chmod)
+# Join Jobbot Mac zip parts — handles macOS App Translocation
+# (unsigned downloaded .app runs from a temp path; parts stay in Downloads)
 set -euo pipefail
-
-# Folder containing the .app (where the .part files should also live)
-APP_PATH="$(cd "$(dirname "$0")/../../.." && pwd)"
-DIR="$(dirname "$APP_PATH")"
-cd "$DIR"
 
 PART0="Jobbot-0.1.0-mac-arm64.zip.part00"
 PART1="Jobbot-0.1.0-mac-arm64.zip.part01"
 PART2="Jobbot-0.1.0-mac-arm64.zip.part02"
 OUT="Jobbot-mac.zip"
 
-missing=0
-for f in "$PART0" "$PART1" "$PART2"; do
-  if [[ ! -f "$f" ]]; then
-    missing=1
+HOME_DIR="${HOME:-/Users/$(id -un)}"
+
+# Resolve .app bundle path
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+APP_PATH="$(cd "$SCRIPT_DIR/../.." && pwd)"
+# Contents/MacOS → Contents → .app ; parent of .app:
+APP_PARENT="$(cd "$APP_PATH/.." && pwd 2>/dev/null || dirname "$APP_PATH")"
+
+is_translocated() {
+  case "$1" in
+    *AppTranslocation*|*TemporaryItems*|/private/var/folders/*)
+      return 0
+      ;;
+  esac
+  return 1
+}
+
+parts_present_in() {
+  local d="$1"
+  [[ -f "$d/$PART0" && -f "$d/$PART1" && -f "$d/$PART2" ]]
+}
+
+# Build search list
+CANDIDATES=()
+SEARCHED_LOG=()
+
+add_candidate() {
+  local d="$1"
+  [[ -z "$d" ]] && return
+  [[ -d "$d" ]] || return
+  # de-dupe
+  local c
+  for c in "${CANDIDATES[@]:-}"; do
+    [[ "$c" == "$d" ]] && return
+  done
+  CANDIDATES+=("$d")
+}
+
+# 1) Folder next to .app — only if NOT translocated
+if ! is_translocated "$APP_PATH"; then
+  add_candidate "$APP_PARENT"
+else
+  SEARCHED_LOG+=("(דילוג על תיקיית האפליקציה — App Translocation: $APP_PATH)")
+fi
+
+# 2) Common download / desktop locations
+add_candidate "$HOME_DIR/Downloads"
+add_candidate "$HOME_DIR/Desktop"
+add_candidate "$HOME_DIR/הורדות"
+add_candidate "$HOME_DIR/שולחן העבודה"
+add_candidate "$HOME_DIR/Library/Mobile Documents/com~apple~CloudDocs/Downloads"
+add_candidate "$HOME_DIR/Library/Mobile Documents/com~apple~CloudDocs/Desktop"
+
+# Also: if user put a "Jobbot" folder on Desktop/Downloads
+add_candidate "$HOME_DIR/Downloads/Jobbot"
+add_candidate "$HOME_DIR/Desktop/Jobbot"
+
+FOUND_DIR=""
+for d in "${CANDIDATES[@]}"; do
+  SEARCHED_LOG+=("$d")
+  if parts_present_in "$d"; then
+    FOUND_DIR="$d"
+    break
   fi
 done
 
-if [[ "$missing" -eq 1 ]]; then
-  /usr/bin/osascript <<APPLESCRIPT
-display dialog "לא נמצאו קבצי החלקים (.part00 .part01 .part02) באותה תיקייה עם האפליקציה.
+# 3) Folder picker if still missing
+if [[ -z "$FOUND_DIR" ]]; then
+  PICKED="$(/usr/bin/osascript <<'APPLESCRIPT' 2>/dev/null || true
+try
+  set theFolder to choose folder with prompt "בחר את התיקייה שמכילה את שלושת קבצי החלקים (.part00 .part01 .part02):"
+  return POSIX path of theFolder
+on error
+  return ""
+end try
+APPLESCRIPT
+)"
+  # strip trailing newline/space/slash issues
+  PICKED="$(printf '%s' "$PICKED" | tr -d '\r' | sed 's/[[:space:]]*$//')"
+  if [[ -n "$PICKED" ]]; then
+    PICKED="${PICKED%/}"
+    SEARCHED_LOG+=("$PICKED (נבחר ידנית)")
+    if parts_present_in "$PICKED"; then
+      FOUND_DIR="$PICKED"
+    fi
+  fi
+fi
 
-שים את שלושת החלקים ואת Join-Jobbot-Mac.app באותה תיקייה, ואז לחץ שוב." buttons {"אישור"} default button 1 with title "Jobbot" with icon stop
+if [[ -z "$FOUND_DIR" ]]; then
+  SEARCHED_TEXT="$(printf '%s\n' "${SEARCHED_LOG[@]}" | sed 's/"/\\"/g')"
+  /usr/bin/osascript <<APPLESCRIPT
+display dialog "לא נמצאו קבצי החלקים (.part00 / .part01 / .part02).
+
+מה לעשות:
+1. העבר את שלושת החלקים + Join-Jobbot-Mac.app לתיקייה חדשה בשולחן העבודה
+2. הפעל שוב את Join-Jobbot-Mac משם
+   (העברה מבטלת App Translocation של macOS)
+
+תיקיות שחיפשתי:
+$SEARCHED_TEXT" buttons {"אישור"} default button 1 with title "Jobbot" with icon stop
 APPLESCRIPT
   exit 1
 fi
 
+cd "$FOUND_DIR"
 rm -f "$OUT"
 cat "$PART0" "$PART1" "$PART2" > "$OUT"
 
 /usr/bin/osascript <<APPLESCRIPT
 display dialog "נוצר הקובץ Jobbot-mac.zip
+בתיקייה:
+$FOUND_DIR
 
 עכשיו:
 1. לחץ פעמיים על Jobbot-mac.zip
@@ -40,5 +127,5 @@ display dialog "נוצר הקובץ Jobbot-mac.zip
 3. אם macOS חוסם: לחיצה ימנית על Jobbot.app ← פתח" buttons {"הצג ב-Finder"} default button 1 with title "Jobbot מוכן"
 APPLESCRIPT
 
-/usr/bin/open -R "$DIR/$OUT"
+/usr/bin/open -R "$FOUND_DIR/$OUT"
 exit 0

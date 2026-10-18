@@ -158,12 +158,16 @@ a {
 }
 
 .nav-tabs button {
+  position: relative;
+  z-index: 3;
   background: transparent;
   border: 1px solid transparent;
   color: var(--muted);
   padding: 8px 14px;
   border-radius: 999px;
   transition: color 0.2s, border-color 0.2s, background 0.2s;
+  pointer-events: auto;
+  cursor: pointer;
 }
 
 .nav-tabs button.active {

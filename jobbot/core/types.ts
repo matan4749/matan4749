@@ -139,7 +139,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
     "מהנדס תוכנה",
   ],
   location: "Israel",
-  enabledSites: ["linkedin", "indeed", "alljobs", "drushim", "elbit", "iai"],
+  // Live adapters first — stubs stay available in Settings but off by default
+  enabledSites: ["linkedin", "indeed"],
   jobLimitPerSite: 5,
   sendEmailAfterRun: true,
 };

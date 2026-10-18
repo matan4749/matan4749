@@ -30,8 +30,14 @@ export default function App() {
   const [reportHtml, setReportHtml] = useState("");
   const [running, setRunning] = useState(false);
   const [statusMsg, setStatusMsg] = useState("");
+  const [chromeHint, setChromeHint] = useState(
+    "~/Library/Application Support/Google/Chrome",
+  );
+  const [chromeProbeMsg, setChromeProbeMsg] = useState("");
+  const [probing, setProbing] = useState(false);
 
   const api = window.jobbot;
+  const chromeReady = Boolean(settings?.chromeUserDataDir?.trim());
 
   useEffect(() => {
     if (!api) {
@@ -43,6 +49,11 @@ export default function App() {
       setSettings(s);
       setSelectedKeywords(s.keywords);
       setAdapters(await api.listAdapters());
+      try {
+        setChromeHint(await api.getChromeHint());
+      } catch {
+        /* keep default */
+      }
       const unsub = api.onProgress(setProgress);
       return unsub;
     })();
@@ -74,6 +85,13 @@ export default function App() {
 
   async function startRun() {
     if (!api || !settings || running) return;
+    if (!settings.chromeUserDataDir?.trim()) {
+      setTab("settings");
+      setStatusMsg(
+        "להגשות אמיתיות חובה להגדיר נתיב Chrome ולהתחבר ללינקדאין/אינדיד — ראה השלבים בהגדרות",
+      );
+      return;
+    }
     setRunning(true);
     setTab("run");
     setStatusMsg("");
@@ -91,16 +109,19 @@ export default function App() {
       const result = await api.startRun({ settings, config });
       setProgress(result.progress);
       setReportHtml(result.reportHtml);
-      if (result.email.previewOnly) {
+      if (result.progress.phase === "error" || result.email.error === "CHROME_PROFILE_REQUIRED") {
+        setStatusMsg("הריצה נעצרה — חסר נתיב Chrome מחובר");
+        setTab("settings");
+      } else if (result.progress.applied === 0) {
         setStatusMsg(
-          settings.reportEmail
-            ? "הדוח נשמר מקומית (outbox) — שליחה מובנית תעבוד כשמפתח האפליקציה מוגדר"
-            : "מלא כתובת מייל בהגדרות לקבלת דוח",
+          "לא הוגשו מועמדויות מאומתות — בדוק לוגים (התחברות / Easy Apply / אישור מסך)",
         );
+      } else if (result.email.previewOnly) {
+        setStatusMsg(`הוגשו ${result.progress.applied} · הדוח נשמר מקומית`);
       } else if (!result.email.ok) {
         setStatusMsg(result.email.error || "שליחת מייל נכשלה");
       } else {
-        setStatusMsg("הדוח נשלח במייל המובנה");
+        setStatusMsg(`הוגשו ${result.progress.applied} · הדוח נשלח`);
       }
     } catch (err) {
       setStatusMsg(err instanceof Error ? err.message : String(err));
@@ -121,6 +142,29 @@ export default function App() {
   async function pickChrome() {
     const p = await api?.pickDir();
     if (p && settings) await persist({ ...settings, chromeUserDataDir: p });
+  }
+
+  async function useChromeHint() {
+    if (!api || !settings) return;
+    const resolved = await api.resolveChromePath(chromeHint);
+    await persist({ ...settings, chromeUserDataDir: resolved || chromeHint });
+  }
+
+  async function probeChrome() {
+    if (!api || !settings?.chromeUserDataDir?.trim()) {
+      setChromeProbeMsg("קודם בחר/הזן נתיב Chrome");
+      return;
+    }
+    setProbing(true);
+    setChromeProbeMsg("בודק… סגור את Chrome אם הוא פתוח");
+    try {
+      const r = await api.probeChrome(settings.chromeUserDataDir);
+      setChromeProbeMsg(r.messageHe);
+    } catch (err) {
+      setChromeProbeMsg(err instanceof Error ? err.message : String(err));
+    } finally {
+      setProbing(false);
+    }
   }
 
   async function analyzeFromCv() {
@@ -181,13 +225,23 @@ export default function App() {
                 מכישלונות, ושולח דוח מייל מפורט בסוף כל ריצה.
               </p>
               <div className="cta-row rise-delay">
-                <button type="button" className="btn btn-primary" onClick={() => void startRun()} disabled={running}>
-                  {running ? "רץ…" : "התחל ריצה"}
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={() => void startRun()}
+                  disabled={running}
+                >
+                  {running ? "רץ…" : chromeReady ? "התחל ריצה אמיתית" : "הגדר Chrome קודם"}
                 </button>
                 <button type="button" className="btn" onClick={() => setTab("settings")}>
                   הגדרות
                 </button>
               </div>
+              {!chromeReady && (
+                <p className="hint rise-delay" style={{ color: "var(--danger)" }}>
+                  להגשות אמיתיות חובה נתיב Chrome מחובר ללינקדאין/אינדיד — לחץ הגדרות.
+                </p>
+              )}
             </section>
           )}
 
@@ -322,6 +376,24 @@ export default function App() {
                   </p>
                 </div>
 
+                <div className="panel" style={{ marginBottom: 16, padding: 14 }}>
+                  <h3 style={{ fontFamily: "var(--font-display)", margin: "0 0 8px" }}>
+                    הגשות אמיתיות — Chrome
+                  </h3>
+                  <ol className="hint" style={{ margin: 0, paddingInlineStart: 18, lineHeight: 1.7 }}>
+                    <li>סגור לגמרי את Chrome (Cmd+Q) לפני בדיקה/ריצה.</li>
+                    <li>
+                      בחר תיקיית הפרופיל — ב־Mac בדרך כלל:
+                      <br />
+                      <code>{chromeHint}</code>
+                      <br />
+                      (לפעמים תת־תיקייה <code>Default</code> בתוך Chrome).
+                    </li>
+                    <li>פתח Chrome מאותו פרופיל → התחבר ל־LinkedIn ו־Indeed.</li>
+                    <li>סגור Chrome שוב → לחץ «בדיקת חיבור Chrome» → הרץ.</li>
+                  </ol>
+                </div>
+
                 <div className="field">
                   <label>Chrome user-data-dir (פרופיל מחובר)</label>
                   <div className="row">
@@ -330,14 +402,28 @@ export default function App() {
                       onChange={(e) =>
                         setSettings({ ...settings, chromeUserDataDir: e.target.value })
                       }
-                      placeholder="~/Library/Application Support/Google/Chrome"
+                      placeholder={chromeHint}
                     />
                     <button type="button" className="btn" onClick={() => void pickChrome()}>
                       בחר
                     </button>
                   </div>
+                  <div className="cta-row" style={{ marginTop: 8 }}>
+                    <button type="button" className="btn" onClick={() => void useChromeHint()}>
+                      מלא נתיב Mac ברירת מחדל
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-primary"
+                      disabled={probing || !settings.chromeUserDataDir.trim()}
+                      onClick={() => void probeChrome()}
+                    >
+                      {probing ? "בודק…" : "בדיקת חיבור Chrome"}
+                    </button>
+                  </div>
+                  {chromeProbeMsg && <p className="hint">{chromeProbeMsg}</p>}
                   <p className="hint">
-                    התחבר בעצמך לאתרים ב-Chrome. סגור את Chrome לפני ריצה. Jobbot לא מבקש סיסמאות.
+                    Jobbot לא מבקש סיסמאות — רק משתמש בסשן שכבר מחובר ב-Chrome שלך.
                   </p>
                 </div>
 

@@ -1,6 +1,16 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
 import type { AppSettings, RunConfig, RunProgress } from "../core/types";
 
+export interface ChromeProbeResult {
+  ok: boolean;
+  pathExists: boolean;
+  pathUsed: string;
+  linkedInLoggedIn: boolean | null;
+  indeedReachable: boolean | null;
+  messageHe: string;
+  detail?: string;
+}
+
 export interface JobbotApi {
   getSettings: () => Promise<AppSettings>;
   saveSettings: (settings: AppSettings) => Promise<AppSettings>;
@@ -38,6 +48,10 @@ export interface JobbotApi {
   getLearningSnapshot: () => Promise<unknown>;
   openPath: (p: string) => Promise<string>;
   getDataDir: () => Promise<string>;
+  getChromeHint: () => Promise<string>;
+  probeChrome: (chromeUserDataDir: string) => Promise<ChromeProbeResult>;
+  resolveChromePath: (raw: string) => Promise<string>;
+  isPackaged: () => Promise<boolean>;
   onProgress: (cb: (progress: RunProgress) => void) => () => void;
 }
 
@@ -55,6 +69,10 @@ const api: JobbotApi = {
   getLearningSnapshot: () => ipcRenderer.invoke("learning:snapshot"),
   openPath: (p) => ipcRenderer.invoke("shell:openPath", p),
   getDataDir: () => ipcRenderer.invoke("app:dataDir"),
+  getChromeHint: () => ipcRenderer.invoke("chrome:defaultHint"),
+  probeChrome: (chromeUserDataDir) => ipcRenderer.invoke("chrome:probe", chromeUserDataDir),
+  resolveChromePath: (raw) => ipcRenderer.invoke("chrome:resolvePath", raw),
+  isPackaged: () => ipcRenderer.invoke("app:isPackaged"),
   onProgress: (cb) => {
     const handler = (_event: IpcRendererEvent, progress: RunProgress) => cb(progress);
     ipcRenderer.on("run:progress", handler);

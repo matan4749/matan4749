@@ -1,23 +1,32 @@
-# Jobbot ל-Mac — התקנה בלי טרמינל
+# Jobbot ל-Mac — התקנה + הגשות אמיתיות
 
-## מה להוריד
+## א. חיבור החבילה (חלקים → Jobbot.app)
 
-1. `Jobbot-0.1.0-mac-arm64.zip.part00`
-2. `Jobbot-0.1.0-mac-arm64.zip.part01`
-3. `Jobbot-0.1.0-mac-arm64.zip.part02`
-4. `Join-Jobbot-Mac.app.zip`
+### דרך אמינה — Terminal
 
-## שלבים (מומלץ — מונע שגיאת «לא נמצאו קבצי החלקים»)
+```bash
+mkdir -p ~/Desktop/Jobbot && cd ~/Desktop/Jobbot
+# העבר לכאן את שלושת ה-.part ואז:
+cat Jobbot-0.1.0-mac-arm64.zip.part00 Jobbot-0.1.0-mac-arm64.zip.part01 Jobbot-0.1.0-mac-arm64.zip.part02 > Jobbot-mac.zip && open .
+```
 
-1. צור **תיקייה חדשה בשולחן העבודה** (למשל `Jobbot`).
-2. **העבר אליה** את שלושת החלקים + `Join-Jobbot-Mac.app.zip` (לא רק העתק מההורדות — העברה חשובה).
-3. לחץ פעמיים על `Join-Jobbot-Mac.app.zip` → מתקבלת האפליקציה.
-4. לחץ פעמיים על **Join-Jobbot-Mac**.
-5. נוצר `Jobbot-mac.zip` → לחץ פעמיים → פתח **Jobbot.app**.
-6. אם מופיעה אזהרה: **לחיצה ימנית** על Jobbot.app ← **פתח**.
+לחץ פעמיים על `Jobbot-mac.zip` → `Jobbot.app` → לחיצה ימנית ← **פתח** אם חוסמים.
 
-למה תיקייה חדשה? macOS מריץ אפליקציות לא-חתומות מההורדות מנתיב זמני (App Translocation) — ואז היא לא «רואה» את החלקים לידה. העברה לתיקייה חדשה פותרת את זה.
+גם: `Join-Jobbot-Mac.app.zip` / `Join-Jobbot-Mac.command` (לחיצה ימנית ← פתח).
 
-Join גם מחפש אוטומטית ב־הורדות / שולחן עבודה, ואם צריך יבקש לבחור תיקייה.
+---
 
-אין צורך בטרמינל.
+## ב. הגשות אמיתיות (חובה!)
+
+בלי זה תראו «לא הוגשה אף מועמדות אמיתית» — זה נכון, לא באג.
+
+1. **סגור Chrome לגמרי** (Cmd+Q).
+2. ב-Jobbot → **הגדרות** → נתיב Chrome, בדרך כלל:
+   `~/Library/Application Support/Google/Chrome`
+   (או תיקיית `Default` בתוכה).
+3. פתח Chrome → התחבר ל־**LinkedIn** ו־**Indeed**.
+4. סגור Chrome שוב.
+5. לחץ **בדיקת חיבור Chrome** בהגדרות.
+6. הרץ — רק אז יוגשו Easy Apply / הגשות אמיתיות (כשיש אישור במסך).
+
+מייל דוח: `matan4749@gmail.com`. קו״ח כבר בפנים.

@@ -25,10 +25,12 @@ export class JobRunner {
 
   constructor(
     private dataDir: string,
-    opts?: { demo?: boolean },
+    opts?: { demo?: boolean; allowDemo?: boolean },
   ) {
     this.learning = new LearningEngine(dataDir);
-    this.demo = opts?.demo ?? process.env.JOBBOT_DEMO === "1";
+    // Packaged apps must pass allowDemo:false so JOBBOT_DEMO never fakes applies
+    const allowDemo = opts?.allowDemo !== false;
+    this.demo = Boolean(opts?.demo) && allowDemo;
   }
 
   onProgress(fn: ProgressListener): () => void {
@@ -64,9 +66,41 @@ export class JobRunner {
     };
     this.emit();
 
+    const chromePath = (settings.chromeUserDataDir || "").trim();
+    if (!this.demo && !chromePath) {
+      this.log(
+        "error",
+        "חסימה: לא הוגדר נתיב Chrome — בלי פרופיל מחובר אי אפשר להגיש מועמדויות אמיתיות",
+      );
+      this.log(
+        "info",
+        "מה לעשות: 1) סגור Chrome לגמרי (Cmd+Q)  2) בהגדרות בחר ~/Library/Application Support/Google/Chrome  3) פתח Chrome, התחבר ללינקדאין/אינדיד  4) סגור Chrome  5) הרץ שוב",
+      );
+      this.patch({
+        phase: "error",
+        finishedAt: new Date().toISOString(),
+      });
+      const reportHtml = buildReportHtml({
+        userName: "מתן עמר",
+        progress: this.progress,
+        results: [],
+      });
+      return {
+        progress: this.getProgress(),
+        reportHtml,
+        email: { ok: false, previewOnly: true, error: "CHROME_PROFILE_REQUIRED" },
+        learningNotes: ["נדרש נתיב Chrome להגשות אמיתיות"],
+      };
+    }
+
     const keywords = await this.resolveKeywords(settings, config);
     this.log("info", `מצב חיפוש: ${config.searchMode === "cv" ? "מקו״ח" : "מילות מפתח"} · ${keywords.join(", ")}`);
-    if (this.demo) this.log("info", "JOBBOT_DEMO=1 — מצב הדגמה ללא דפדפן אמיתי");
+    if (this.demo) {
+      this.log("warn", "מצב הדגמה פעיל — לא יוגשו מועמדויות אמיתיות");
+    } else {
+      this.log("info", `Chrome profile: ${chromePath}`);
+      this.log("info", "ודא ש-Chrome סגור לגמרי לפני המשך הריצה");
+    }
 
     const enabled = config.enabledSites.length
       ? config.enabledSites
@@ -85,9 +119,10 @@ export class JobRunner {
       );
 
       const knowledge = this.learning.getSiteKnowledge(adapter.id);
+      // Real mode: never fall back to demo just because something failed later
       const ctx: SiteAdapterContext = {
-        demo: this.demo || !settings.chromeUserDataDir,
-        chromeUserDataDir: settings.chromeUserDataDir || undefined,
+        demo: this.demo,
+        chromeUserDataDir: chromePath || undefined,
         cvPath: settings.cvPath || undefined,
         timeoutMs: config.perJobTimeoutMs,
         knowledge,

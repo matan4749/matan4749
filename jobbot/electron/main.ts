@@ -1,11 +1,17 @@
 import { app, BrowserWindow, ipcMain, dialog, shell } from "electron";
 import path from "node:path";
 import fs from "node:fs";
+import os from "node:os";
 import { JobRunner } from "../core/runner/orchestrator";
 import { loadSettings, saveSettings, seedCvIntoDataDir } from "../core/settings/store";
 import { analyzeCv } from "../core/cv/analyze";
 import { listAdapters } from "../core/adapters/registry";
 import { LearningEngine } from "../core/learning/engine";
+import {
+  defaultMacChromeHint,
+  probeChromeProfile,
+  resolveChromeUserDataDir,
+} from "../core/browser/probe";
 import type { AppSettings, RunConfig } from "../core/types";
 
 let mainWindow: BrowserWindow | null = null;
@@ -13,7 +19,6 @@ let runner: JobRunner | null = null;
 let lastReportHtml = "";
 
 function appRoot(): string {
-  // Dev: project root; packaged: asar / resources sibling
   if (process.env.VITE_DEV_SERVER_URL) {
     return path.join(__dirname, "..");
   }
@@ -32,6 +37,12 @@ function dataDir(): string {
   return dir;
 }
 
+/** Packaged Mac/Windows builds never use JOBBOT_DEMO — real applies only */
+function demoAllowed(): boolean {
+  if (app.isPackaged) return false;
+  return process.env.JOBBOT_DEMO === "1";
+}
+
 function ensureSettings(): AppSettings {
   const dir = dataDir();
   const seededCv = seedCvIntoDataDir(dir, appRoot());
@@ -39,13 +50,17 @@ function ensureSettings(): AppSettings {
   if (!settings.cvPath || !fs.existsSync(settings.cvPath)) {
     settings.cvPath = seededCv;
     saveSettings(dir, settings);
-  } else if (!settings.cvPath.includes("matan-amar-cv") && fs.existsSync(seededCv)) {
-    // Prefer seeded Matan CV when settings still empty-ish
   }
-  // Always ensure a usable CV when empty
   if (!settings.cvPath) {
     settings.cvPath = seededCv;
     saveSettings(dir, settings);
+  }
+  // Seed Mac Chrome hint path if empty and the folder exists
+  if (!settings.chromeUserDataDir?.trim() && process.platform === "darwin") {
+    const hint = defaultMacChromeHint();
+    if (fs.existsSync(hint)) {
+      // Don't auto-save — only expose via IPC hint; user must confirm after login
+    }
   }
   return loadSettings(dir, appRoot());
 }
@@ -79,7 +94,10 @@ function createWindow(): void {
 
 function getRunner(): JobRunner {
   if (!runner) {
-    runner = new JobRunner(dataDir(), { demo: process.env.JOBBOT_DEMO === "1" });
+    runner = new JobRunner(dataDir(), {
+      demo: demoAllowed(),
+      allowDemo: demoAllowed(),
+    });
     runner.onProgress((progress) => {
       mainWindow?.webContents.send("run:progress", progress);
     });
@@ -124,12 +142,31 @@ function registerIpc(): void {
     return res.canceled ? null : res.filePaths[0] ?? null;
   });
 
+  ipcMain.handle("chrome:defaultHint", () => {
+    if (process.platform === "darwin") return defaultMacChromeHint();
+    if (process.platform === "win32") {
+      return path.join(os.homedir(), "AppData", "Local", "Google", "Chrome", "User Data");
+    }
+    return path.join(os.homedir(), ".config", "google-chrome");
+  });
+
+  ipcMain.handle("chrome:probe", async (_e, chromeUserDataDir: string) => {
+    return probeChromeProfile(chromeUserDataDir);
+  });
+
+  ipcMain.handle("chrome:resolvePath", (_e, raw: string) => resolveChromeUserDataDir(raw));
+
   ipcMain.handle("run:start", async (_e, payload: { settings: AppSettings; config: RunConfig }) => {
     const settings = { ...payload.settings };
     if (!settings.cvPath || !fs.existsSync(settings.cvPath)) {
       settings.cvPath = seedCvIntoDataDir(dataDir(), appRoot());
     }
+    if (settings.chromeUserDataDir) {
+      settings.chromeUserDataDir = resolveChromeUserDataDir(settings.chromeUserDataDir);
+    }
     saveSettings(dataDir(), settings);
+    // Recreate runner each run so packaged/demo flags stay correct
+    runner = null;
     const r = getRunner();
     const result = await r.run(settings, payload.config);
     lastReportHtml = result.reportHtml;
@@ -155,6 +192,8 @@ function registerIpc(): void {
   ipcMain.handle("shell:openPath", async (_e, p: string) => shell.openPath(p));
 
   ipcMain.handle("app:dataDir", () => dataDir());
+
+  ipcMain.handle("app:isPackaged", () => app.isPackaged);
 }
 
 app.whenReady().then(() => {

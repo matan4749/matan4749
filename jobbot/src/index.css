@@ -50,11 +50,12 @@ a {
   color: var(--mint);
 }
 
-/* Atmospheric mesh background */
+/* Atmospheric mesh background — must not steal clicks from the UI */
 .app-bg {
   position: fixed;
   inset: 0;
   z-index: 0;
+  pointer-events: none;
   background:
     radial-gradient(900px 500px at 85% 10%, rgba(61, 255, 200, 0.14), transparent 55%),
     radial-gradient(700px 420px at 10% 80%, rgba(28, 120, 140, 0.28), transparent 50%),

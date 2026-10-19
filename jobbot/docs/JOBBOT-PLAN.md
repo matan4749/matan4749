@@ -1,21 +1,13 @@
-# Jobbot — תוכנית הפצה והרצה
+# Jobbot — תוכנית הפצה
 
-## הפצה ראשית (Mac של מתן)
+## ראשי (Mac)
+**הפעל-Jobbot.app.zip** — לחיצה כפולה / קליק ימני → פתח.  
+מושך ענף `cursor/jobbot-desktop-app-4bd4` ל־`~/Desktop/Jobbot-src` ומריץ `npm install && npm run build && npm start`.
 
-**קובץ אחד:** `הפעל-Jobbot.command`
-
-1. קליק ימני → פתח  
-2. הסקריפט: `git pull` לענף `cursor/jobbot-desktop-app-4bd4` → `~/Desktop/Jobbot-src`  
-3. `cd jobbot && npm install && npm run build && npm start`  
-4. אחרי כל עדכון סוכן — אותה לחיצה שוב  
-
-אין Join · אין `tar.gz.part` · אין Linux `.app` כנתיב ראשי.
-
-## מוצר — ריצה
-
-- ברירת מחדל: פרופיל Jobbot קבוע (`jobbot-data/browser-profile/`) + שער התחברות ידני  
-- «המשך לריצה» → חיפוש/הגשה באותו Chrome  
+גיבוי: `הפעל-Jobbot.command.zip` (mode 755 בתוך ה-zip).
 
 ## Deprecated
+Linux-built Jobbot.app / tar.gz.part / Join — לא נתיב ראשי.
 
-- Linux-cross-built `Jobbot.app` / split tar.gz / Join tools — לא אמין בלי חתימה על Mac  
+## מוצר
+פרופיל Jobbot קבוע + שער התחברות ידני לפני חיפוש/הגשה.

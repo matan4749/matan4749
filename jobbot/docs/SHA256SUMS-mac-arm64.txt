@@ -1,0 +1,8 @@
+# Jobbot Mac arm64 — verify before unzip
+# Full: Jobbot-0.1.0-mac-arm64.zip / Jobbot-mac.zip
+9d4c6905979e7857085984b660239f87f46d003ff41d5884583e9e388d89e7b3  Jobbot-mac.zip
+9d4c6905979e7857085984b660239f87f46d003ff41d5884583e9e388d89e7b3  Jobbot-0.1.0-mac-arm64.zip
+
+b5309d67ccf9fdd2748123d5de79b44af9bfc6416b01a9414027d6cc45cdb187  Jobbot-0.1.0-mac-arm64.zip.part00
+294f8685d3c9aec6e06c11bb4eca0f199f92bf47175c092d80d3f6ff9a07ff5d  Jobbot-0.1.0-mac-arm64.zip.part01
+ed207740fb11d2b8d5f277f6c78bdc6ef9bd5aa2e153127cfee68d4d49d9f196  Jobbot-0.1.0-mac-arm64.zip.part02

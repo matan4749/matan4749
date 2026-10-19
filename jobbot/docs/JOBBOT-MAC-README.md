@@ -1,29 +1,40 @@
-# Jobbot ל-Mac — התקנה + הגשות אמיתיות
+# Jobbot ל-Mac — התקנה (חלקים מאומתים)
 
-## א. חיבור החבילה (חלקים → Jobbot.app)
+**חשוב:** מחק קבצי `Jobbot-mac.zip` ו-`.part` ישנים. הורד **שלושת** החלקים מ**אותו ביילד**, ואז חבר.
+
+## SHA256 (ביילד זה)
+
+| קובץ | SHA256 |
+|------|--------|
+| Jobbot-mac.zip (אחרי cat) | `9d4c6905979e7857085984b660239f87f46d003ff41d5884583e9e388d89e7b3` |
+| part00 | `b5309d67ccf9fdd2748123d5de79b44af9bfc6416b01a9414027d6cc45cdb187` |
+| part01 | `294f8685d3c9aec6e06c11bb4eca0f199f92bf47175c092d80d3f6ff9a07ff5d` |
+| part02 | `ed207740fb11d2b8d5f277f6c78bdc6ef9bd5aa2e153127cfee68d4d49d9f196` |
+
+גם ב-`SHA256SUMS.txt` בתיקיית media.
+
+## חיבור + חילוץ (מומלץ — עוקף Error 94 של Archive Utility)
+
+### Join.app / .command
+1. הורד `Join-Jobbot-Mac.app.zip` או `Join-Jobbot-Mac.command`
+2. שים ליד שלושת ה-`.part`
+3. לחיצה ימנית ← **פתח**
+4. Join בודק `unzip -t` ומחלץ `Jobbot.app` (לא דרך Archive Utility)
+
+אם zip פגום: «הורד שוב את שלושת החלקים מאותו ביילד».
+
+### Terminal
 
 ```bash
 mkdir -p ~/Desktop/Jobbot && cd ~/Desktop/Jobbot
 # העבר לכאן את שלושת ה-.part ואז:
-cat Jobbot-0.1.0-mac-arm64.zip.part00 Jobbot-0.1.0-mac-arm64.zip.part01 Jobbot-0.1.0-mac-arm64.zip.part02 > Jobbot-mac.zip && open .
+rm -f Jobbot-mac.zip
+cat Jobbot-0.1.0-mac-arm64.zip.part00 Jobbot-0.1.0-mac-arm64.zip.part01 Jobbot-0.1.0-mac-arm64.zip.part02 > Jobbot-mac.zip
+shasum -a 256 Jobbot-mac.zip   # חייב להיות 9d4c6905979e7857085984b660239f87f46d003ff41d5884583e9e388d89e7b3
+unzip -t Jobbot-mac.zip && unzip -o Jobbot-mac.zip
 ```
 
-לחיצה ימנית על `Jobbot.app` ← **פתח**. גם: `Join-Jobbot-Mac.app.zip` / `.command`.
+אם Archive Utility אומר Error 94 / «הודעה לא תקינה» — **אל תשתמש בו**; השתמש ב-`unzip` או ב-Join כנ״ל.
 
----
-
-## ב. הגשות אמיתיות + Chrome
-
-נתיב מאושר:
-`/Users/matan_amar/Library/Application Support/Google/Chrome`
-
-1. בהגדרות מלא את הנתיב (או «מלא נתיב Mac ברירת מחדל»).
-2. התחבר ל־LinkedIn / Indeed ב-Chrome הרגיל.
-3. Jobbot **מעתיק** את הפרופיל לעותק נפרד (`chrome-clone`) בלי קבצי נעילה — אחרי סנכרון מוצלח **אפשר להשאיר Chrome פתוח**.
-4. לחץ **בדיקת חיבור Chrome**. אם צריך עדכון סשן: **רענון עותק פרופיל**.
-5. אם מופיע «פתיחה בסשן קיים» / נעילה: סגור לגמרי עם **Cmd+Q** (לא רק חלון), ודא שאין נקודה ב־Dock, ואז רענון.
-
-
-6. לפני ריצה לחץ **וודא ש־Chrome סגור** (או שההתחלה תבדוק אוטומטית) — אם פתוח: Cmd+Q.
-
-מייל דוח: `matan4749@gmail.com`. קו״ח כבר בפנים.
+## אחרי החילוץ
+לחיצה ימנית על `Jobbot.app` ← פתח. הגדר Chrome + «וודא ש־Chrome סגור».

@@ -7,6 +7,7 @@ import type {
   SiteKnowledge,
   SuccessHint,
 } from "../types";
+import { isBrowserClosedError } from "../browser/session";
 
 export interface KnowledgeBase {
   version: number;
@@ -34,6 +35,8 @@ export class LearningEngine {
   constructor(dataDir: string) {
     this.kbPath = path.join(dataDir, "knowledge", "failures.json");
     this.kb = this.load();
+    // Heal mistaken skipSteps from older closed-browser runs
+    this.clearBrowserClosedSkipMistakes();
   }
 
   getSiteKnowledge(site: string): SiteKnowledge {
@@ -50,6 +53,22 @@ export class LearningEngine {
 
       if (r.status === "failed") {
         const step = inferStep(r.reason);
+        // Never learn skipSteps from browser-death — not an adapter bug
+        if (step === "browserClosed" || isBrowserClosedError(r.reason)) {
+          const failure: FailureRecord = {
+            id: randomUUID(),
+            site,
+            step: "browserClosed",
+            error: r.reason || "BROWSER_CLOSED",
+            timestamp: new Date().toISOString(),
+            adapterVersion: sk.adapterVersion,
+          };
+          this.kb.failures.unshift(failure);
+          sk.recentFailures = [failure, ...sk.recentFailures].slice(0, 50);
+          this.kb.sites[site] = sk;
+          continue;
+        }
+
         const selector = extractSelector(r.reason);
         const failure: FailureRecord = {
           id: randomUUID(),
@@ -65,14 +84,23 @@ export class LearningEngine {
 
         // Heuristic: repeated same selector failure → deprioritize / skip
         const same = sk.recentFailures.filter(
-          (f) => f.step === step && f.selector && f.selector === selector,
+          (f) =>
+            f.step === step &&
+            f.selector &&
+            f.selector === selector &&
+            f.step !== "browserClosed",
         ).length;
         if (selector && same >= 3) {
           for (const key of Object.keys(sk.preferredSelectors)) {
             sk.preferredSelectors[key] = sk.preferredSelectors[key].filter((s) => s !== selector);
           }
         }
-        if (same >= 5 && !sk.skipSteps.includes(step)) {
+        if (
+          same >= 5 &&
+          step !== "browserClosed" &&
+          step !== "timeout" &&
+          !sk.skipSteps.includes(step)
+        ) {
           sk.skipSteps.push(step);
         }
       } else if (r.status === "applied" && r.confirmed && !r.simulated) {
@@ -89,17 +117,57 @@ export class LearningEngine {
 
     // Cap global failures
     this.kb.failures = this.kb.failures.slice(0, 500);
+    this.clearBrowserClosedSkipMistakes();
     this.kb.updatedAt = new Date().toISOString();
     this.save();
+  }
+
+  /**
+   * Remove skipSteps.apply (and similar) that were only justified by closed-browser errors.
+   * Exported behavior used on load + after each run.
+   */
+  clearBrowserClosedSkipMistakes(): string[] {
+    const notes: string[] = [];
+    for (const [site, sk] of Object.entries(this.kb.sites)) {
+      if (!sk.skipSteps.length) continue;
+      const closedHeavy = sk.recentFailures
+        .slice(0, 15)
+        .filter((f) => f.step === "browserClosed" || isBrowserClosedReason(f.error));
+      const realApplyFails = sk.recentFailures
+        .slice(0, 15)
+        .filter(
+          (f) =>
+            (f.step === "apply" || f.step === "selector") &&
+            !isBrowserClosedReason(f.error),
+        );
+
+      if (closedHeavy.length >= 3 && realApplyFails.length < 3) {
+        const before = sk.skipSteps.slice();
+        sk.skipSteps = sk.skipSteps.filter((s) => s !== "apply");
+        if (before.includes("apply") && !sk.skipSteps.includes("apply")) {
+          notes.push(
+            `${site}: נוקה skipSteps.apply (נוצר בטעות אחרי סגירת דפדפן)`,
+          );
+        }
+        this.kb.sites[site] = sk;
+      }
+    }
+    if (notes.length) {
+      this.kb.updatedAt = new Date().toISOString();
+      this.save();
+    }
+    return notes;
   }
 
   /** Post-run analysis: bump adapter version when many new failures of same type */
   analyze(): { bumped: string[]; notes: string[] } {
     const bumped: string[] = [];
-    const notes: string[] = [];
+    const notes: string[] = [...this.clearBrowserClosedSkipMistakes()];
 
     for (const [site, sk] of Object.entries(this.kb.sites)) {
-      const recent = sk.recentFailures.slice(0, 10);
+      const recent = sk.recentFailures
+        .slice(0, 10)
+        .filter((f) => f.step !== "browserClosed" && !isBrowserClosedReason(f.error));
       if (recent.length >= 5) {
         const next = bumpPatch(sk.adapterVersion);
         sk.adapterVersion = next;
@@ -107,7 +175,6 @@ export class LearningEngine {
         notes.push(`${site}: adapterVersion → ${next} אחרי ${recent.length} כישלונות אחרונים`);
       }
 
-      // Promote selectors mentioned in older successes that still appear in preferred list gaps
       if (sk.skipSteps.length) {
         notes.push(`${site}: דילוג על שלבים שבורים: ${sk.skipSteps.join(", ")}`);
       }
@@ -153,8 +220,14 @@ export class LearningEngine {
   }
 }
 
-function inferStep(reason?: string): string {
+function isBrowserClosedReason(reason?: string): boolean {
+  if (!reason) return false;
+  return isBrowserClosedError(reason);
+}
+
+export function inferStep(reason?: string): string {
   if (!reason) return "unknown";
+  if (isBrowserClosedReason(reason)) return "browserClosed";
   const r = reason.toLowerCase();
   if (r.includes("selector") || r.includes("not found") || r.includes("clickable")) return "selector";
   if (r.includes("cv") || r.includes("upload") || r.includes("file")) return "cvUpload";
@@ -166,6 +239,9 @@ function inferStep(reason?: string): string {
 
 function extractSelector(reason?: string): string | undefined {
   if (!reason) return undefined;
+  if (isBrowserClosedReason(reason)) return undefined;
+  // Avoid treating "browserContext.newPage: Target…" as a CSS selector
+  if (/newPage|Target page|browser has been closed/i.test(reason)) return undefined;
   const m = reason.match(/matched:\s*(.+)$/i) || reason.match(/([.#\[][\w\-="'[\] .#>:+~]+)/);
   return m?.[1]?.trim().slice(0, 120);
 }

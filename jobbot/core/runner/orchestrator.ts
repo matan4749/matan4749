@@ -15,6 +15,12 @@ import { launchChromePersistent, type LaunchedChrome } from "../browser/launch-c
 import { openLoginGatePages } from "../browser/login-gate";
 import { ensureJobbotChromeProfile, jobbotCloneRoot } from "../browser/profile-clone";
 import { assertChromeSessionArtifacts } from "../browser/session-artifacts";
+import {
+  BROWSER_CLOSED_CODE,
+  BROWSER_CLOSED_MSG_HE,
+  isBrowserClosedError,
+  isSharedBrowserAlive,
+} from "../browser/session";
 import type {
   AppSettings,
   ApplyResult,
@@ -23,6 +29,10 @@ import type {
   RunProgress,
   SiteAdapterContext,
 } from "../types";
+
+/** Stability cap — Matan's logs showed 20 was too high for flaky Easy Apply */
+export const STABLE_JOB_LIMIT_PER_SITE = 5;
+export const MAX_JOB_LIMIT_PER_SITE = 10;
 
 export type ProgressListener = (progress: RunProgress) => void;
 
@@ -109,9 +119,16 @@ export class JobRunner {
     }
 
     const keywords = await this.resolveKeywords(settings, config);
+    const jobLimitPerSite = clampJobLimit(config.jobLimitPerSite);
+    if (jobLimitPerSite !== config.jobLimitPerSite) {
+      this.log(
+        "warn",
+        `מגבלת משרות לאתר הורדה מ-${config.jobLimitPerSite} ל-${jobLimitPerSite} ליציבות`,
+      );
+    }
     this.log(
       "info",
-      `מצב חיפוש: ${config.searchMode === "cv" ? "מקו״ח" : "מילות מפתח"} · ${keywords.join(", ")}`,
+      `מצב חיפוש: ${config.searchMode === "cv" ? "מקו״ח" : "מילות מפתח"} · ${keywords.join(", ")} · עד ${jobLimitPerSite} לאתר`,
     );
 
     const enabled = config.enabledSites.length
@@ -222,6 +239,82 @@ export class JobRunner {
 
     const allResults: ApplyResult[] = [];
 
+    const buildCtx = (adapterId: string): SiteAdapterContext => ({
+      demo: this.demo,
+      chromeUserDataDir: profilePath || chromePath || undefined,
+      jobbotChromeProfileDir: browserMode === "jobbot" ? profilePath : undefined,
+      chromeProfileDirectory,
+      sharedBrowser,
+      cvPath: settings.cvPath || undefined,
+      timeoutMs: config.perJobTimeoutMs,
+      knowledge: this.learning.getSiteKnowledge(adapterId),
+      log: (level, message) => this.log(level, message),
+      signal,
+    });
+
+    const recoverBrowserIfNeeded = async (err: unknown): Promise<boolean> => {
+      if (!isBrowserClosedError(err) && isSharedBrowserAlive(sharedBrowser)) {
+        return false;
+      }
+      this.log("warn", BROWSER_CLOSED_MSG_HE);
+      sharedBrowser = undefined;
+      this.patch({
+        phase: "awaiting-login",
+        loginGate: {
+          sites: adapters.map((a) => ({
+            id: a.id,
+            displayNameHe: a.displayNameHe,
+            url: "",
+            loggedIn: null,
+          })),
+          messageHe: BROWSER_CLOSED_MSG_HE,
+        },
+      });
+      const action = await this.waitForLoginGate(signal);
+      this.patch({ loginGate: undefined });
+      if (action !== "continue" || signal.aborted) {
+        this.log("warn", "הריצה בוטלה אחרי סגירת הדפדפן");
+        return false;
+      }
+      try {
+        sharedBrowser = await launchChromePersistent({
+          userDataDir: profilePath,
+          profileDirectory: chromeProfileDirectory,
+          log: (m) => this.log("info", m),
+        });
+        const gateSites = adapters.map((a) => ({
+          id: a.id,
+          displayNameHe: a.displayNameHe,
+        }));
+        const statuses = await openLoginGatePages(sharedBrowser, gateSites, (m) =>
+          this.log("info", m),
+        );
+        this.patch({
+          phase: "awaiting-login",
+          loginGate: {
+            sites: statuses,
+            messageHe: BROWSER_CLOSED_MSG_HE,
+          },
+        });
+        const again = await this.waitForLoginGate(signal);
+        this.patch({ loginGate: undefined });
+        if (again !== "continue" || signal.aborted) {
+          await sharedBrowser.close().catch(() => undefined);
+          sharedBrowser = undefined;
+          return false;
+        }
+        this.log("info", "הדפדפן חזר — ממשיכים בריצה");
+        return true;
+      } catch (relaunchErr) {
+        this.log(
+          "error",
+          `פתיחה מחדש נכשלה: ${errMsg(relaunchErr).split("\n")[0]}`,
+        );
+        sharedBrowser = undefined;
+        return false;
+      }
+    };
+
     try {
     for (const adapter of adapters) {
       if (signal.aborted) break;
@@ -232,19 +325,7 @@ export class JobRunner {
         `── ${adapter.displayNameHe} (${adapter.status === "live" ? "חי" : "stub"}) ──`,
       );
 
-      const knowledge = this.learning.getSiteKnowledge(adapter.id);
-      const ctx: SiteAdapterContext = {
-        demo: this.demo,
-        chromeUserDataDir: profilePath || chromePath || undefined,
-        jobbotChromeProfileDir: browserMode === "jobbot" ? profilePath : undefined,
-        chromeProfileDirectory,
-        sharedBrowser,
-        cvPath: settings.cvPath || undefined,
-        timeoutMs: config.perJobTimeoutMs,
-        knowledge,
-        log: (level, message) => this.log(level, message),
-        signal,
-      };
+      let ctx = buildCtx(adapter.id);
 
       let jobs = [];
       try {
@@ -253,7 +334,7 @@ export class JobRunner {
             {
               keywords,
               location: config.location || settings.location,
-              limit: config.jobLimitPerSite,
+              limit: jobLimitPerSite,
             },
             ctx,
           ),
@@ -262,8 +343,43 @@ export class JobRunner {
           signal,
         );
       } catch (err) {
-        this.log("error", `${adapter.displayNameHe}: חיפוש נכשל — ${errMsg(err)}`);
-        continue;
+        if (isBrowserClosedError(err)) {
+          const recovered = await recoverBrowserIfNeeded(err);
+          if (!recovered) {
+            this.patch({
+              phase: signal.aborted ? "stopped" : "stopped",
+              finishedAt: new Date().toISOString(),
+            });
+            break;
+          }
+          ctx = buildCtx(adapter.id);
+          try {
+            jobs = await withTimeout(
+              adapter.search(
+                {
+                  keywords,
+                  location: config.location || settings.location,
+                  limit: jobLimitPerSite,
+                },
+                ctx,
+              ),
+              config.perSiteTimeoutMs,
+              `${adapter.id} search timeout`,
+              signal,
+            );
+          } catch (err2) {
+            this.log("error", `${adapter.displayNameHe}: חיפוש נכשל — ${errMsg(err2)}`);
+            if (isBrowserClosedError(err2)) {
+              // Abort remaining sites cleanly — don't spam newPage on dead browser
+              this.log("warn", `${adapter.displayNameHe}: מדלג על שאר האתר אחרי סגירת דפדפן`);
+              break;
+            }
+            continue;
+          }
+        } else {
+          this.log("error", `${adapter.displayNameHe}: חיפוש נכשל — ${errMsg(err)}`);
+          continue;
+        }
       }
 
       this.patch({ found: this.progress.found + jobs.length });
@@ -290,9 +406,24 @@ export class JobRunner {
 
       this.patch({ phase: "applying" });
 
+      let abortSite = false;
       for (const job of jobs) {
-        if (signal.aborted) break;
+        if (signal.aborted || abortSite) break;
         this.patch({ currentJob: job.title, currentSite: adapter.id });
+
+        // Don't call apply/newPage if browser already dead
+        if (sharedBrowser && !isSharedBrowserAlive(sharedBrowser)) {
+          const recovered = await recoverBrowserIfNeeded(new Error(BROWSER_CLOSED_CODE));
+          if (!recovered) {
+            abortSite = true;
+            this.patch({
+              phase: signal.aborted ? "stopped" : "stopped",
+              finishedAt: new Date().toISOString(),
+            });
+            break;
+          }
+          ctx = buildCtx(adapter.id);
+        }
 
         let result: ApplyResult | null = null;
         let attempt = 0;
@@ -310,6 +441,25 @@ export class JobRunner {
             if (result.status !== "failed" || attempt >= max) break;
             this.log("warn", `ניסיון חוזר ${attempt}/${max} ל-${job.title}`);
           } catch (err) {
+            if (isBrowserClosedError(err)) {
+              const recovered = await recoverBrowserIfNeeded(err);
+              if (!recovered) {
+                result = {
+                  job,
+                  status: "skipped",
+                  method: adapter.defaultApplyMethod,
+                  reason: BROWSER_CLOSED_MSG_HE,
+                  durationMs: 0,
+                  confirmed: false,
+                };
+                abortSite = true;
+                break;
+              }
+              ctx = buildCtx(adapter.id);
+              // Retry this job once after recover
+              attempt = Math.max(0, attempt - 1);
+              continue;
+            }
             result = {
               job,
               status: "failed",
@@ -346,6 +496,11 @@ export class JobRunner {
             `○ לא הוגש: ${job.title} — ${result.reason || result.status}${result.simulated ? " [הדגמה]" : ""}`,
           );
         }
+      }
+
+      if (abortSite && !isSharedBrowserAlive(sharedBrowser)) {
+        this.log("warn", "עוצר אתרי המשך — הדפדפן עדיין סגור");
+        break;
       }
     }
     } finally {
@@ -521,6 +676,12 @@ function earlyError(
 function errMsg(err: unknown): string {
   if (err instanceof Error) return err.message;
   return String(err);
+}
+
+export function clampJobLimit(n: number): number {
+  if (!Number.isFinite(n) || n < 1) return STABLE_JOB_LIMIT_PER_SITE;
+  if (n > MAX_JOB_LIMIT_PER_SITE) return STABLE_JOB_LIMIT_PER_SITE;
+  return Math.floor(n);
 }
 
 function withTimeout<T>(

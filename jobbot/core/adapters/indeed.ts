@@ -1,7 +1,14 @@
 import type { SiteAdapter } from "./types";
 import { demoApply, demoJobs } from "./demo";
 import { detectApplyConfirmation } from "./confirm";
-import { clickFirst, hasBrowserSession, pickSelector, withBrowserPage } from "../browser/session";
+import {
+  BROWSER_CLOSED_CODE,
+  clickFirst,
+  hasBrowserSession,
+  isBrowserClosedError,
+  pickSelector,
+  withBrowserPage,
+} from "../browser/session";
 import type { ApplyMethod, ApplyResult, JobListing, SiteAdapterContext, SiteSearchParams } from "../types";
 
 export const indeedAdapter: SiteAdapter = {
@@ -27,7 +34,10 @@ export const indeedAdapter: SiteAdapter = {
       if (params.location) url.searchParams.set("l", params.location);
 
       ctx.log("info", `Indeed: מחפש — ${keywords}`);
-      await page.goto(url.toString(), { waitUntil: "domcontentloaded", timeout: ctx.timeoutMs });
+      await page.goto(url.toString(), {
+        waitUntil: "domcontentloaded",
+        timeout: Math.min(ctx.timeoutMs, 30000),
+      });
 
       const cardSelectors = pickSelector(ctx.knowledge, "jobCard", [
         ".job_seen_beacon",
@@ -84,10 +94,21 @@ export const indeedAdapter: SiteAdapter = {
       return demoApply(job, ctx, method);
     }
 
+    // Mistaken learning: closed-browser failures must not permanently skip apply
+    if (ctx.knowledge.skipSteps.includes("apply")) {
+      ctx.log(
+        "warn",
+        "Indeed: מתעלם מ-skipSteps.apply (לרוב נוצר בטעות אחרי סגירת דפדפן)",
+      );
+    }
+
     const started = Date.now();
     try {
       return await withBrowserPage(ctx, async (page) => {
-        await page.goto(job.url, { waitUntil: "domcontentloaded", timeout: ctx.timeoutMs });
+        await page.goto(job.url, {
+          waitUntil: "domcontentloaded",
+          timeout: Math.min(ctx.timeoutMs, 25000),
+        });
 
         const applyBtns = pickSelector(ctx.knowledge, "apply", [
           "button:has-text('Apply now')",
@@ -97,7 +118,18 @@ export const indeedAdapter: SiteAdapter = {
           "a[href*='indeedapply']",
         ]);
 
-        await clickFirst(page, applyBtns, ctx.timeoutMs);
+        try {
+          await clickFirst(page, applyBtns, Math.min(ctx.timeoutMs, 15000));
+        } catch {
+          return {
+            job,
+            status: "skipped",
+            method,
+            reason: "דילוג: לא נמצא כפתור הגשה ב-Indeed",
+            durationMs: Date.now() - started,
+            confirmed: false,
+          };
+        }
         ctx.log("info", "Indeed: נפתח טופס הגשה");
 
         if (ctx.cvPath) {
@@ -117,7 +149,7 @@ export const indeedAdapter: SiteAdapter = {
           "button:has-text('שלח')",
           "button[type='submit']",
         ]);
-        await clickFirst(page, submit, Math.min(ctx.timeoutMs, 25000));
+        await clickFirst(page, submit, Math.min(ctx.timeoutMs, 20000));
 
         const { confirmed, matched } = await detectApplyConfirmation(page, ctx, [
           "text=/application submitted/i",
@@ -146,6 +178,9 @@ export const indeedAdapter: SiteAdapter = {
         };
       });
     } catch (err) {
+      if (isBrowserClosedError(err)) {
+        throw new Error(BROWSER_CLOSED_CODE);
+      }
       return {
         job,
         status: "failed",

@@ -3,6 +3,12 @@ import type { SiteAdapterContext } from "../types";
 import { chromeLaunchErrorHe, isChromeLockError } from "./chrome-lock";
 import { launchChromePersistent, resolveLaunchUserDataDir, type LaunchedChrome } from "./launch-chrome";
 
+/** Thrown / matched when shared Chrome died mid-run */
+export const BROWSER_CLOSED_CODE = "BROWSER_CLOSED";
+
+export const BROWSER_CLOSED_MSG_HE =
+  "הדפדפן נסגר — התחבר שוב / המשך";
+
 /** True when adapters should use real browser automation (not demo stubs) */
 export function hasBrowserSession(ctx: SiteAdapterContext): boolean {
   return Boolean(
@@ -10,6 +16,29 @@ export function hasBrowserSession(ctx: SiteAdapterContext): boolean {
       ctx.jobbotChromeProfileDir ||
       ctx.chromeUserDataDir,
   );
+}
+
+export function isBrowserClosedError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err ?? "");
+  return (
+    msg === BROWSER_CLOSED_CODE ||
+    /BROWSER_CLOSED|Target page, context or browser has been closed|Target closed|browser has been closed/i.test(
+      msg,
+    )
+  );
+}
+
+/** Best-effort: is the shared Playwright browser still usable? */
+export function isSharedBrowserAlive(shared?: LaunchedChrome | null): boolean {
+  if (!shared) return false;
+  try {
+    if (!shared.browser.isConnected()) return false;
+    // Touch context — closed contexts throw on pages()
+    void shared.context.pages();
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export async function withBrowserPage<T>(
@@ -22,11 +51,28 @@ export async function withBrowserPage<T>(
 
   // Prefer shared session from login gate (same Chrome for whole run)
   if (ctx.sharedBrowser) {
+    if (!isSharedBrowserAlive(ctx.sharedBrowser)) {
+      throw new Error(BROWSER_CLOSED_CODE);
+    }
     const context = ctx.sharedBrowser.context;
-    const page = await context.newPage();
+    let page: Page;
+    try {
+      page = await context.newPage();
+    } catch (err) {
+      if (isBrowserClosedError(err)) {
+        throw new Error(BROWSER_CLOSED_CODE);
+      }
+      if (isChromeLockError(err)) {
+        throw new Error(chromeLaunchErrorHe(err));
+      }
+      throw err;
+    }
     try {
       return await fn(page, context);
     } catch (err) {
+      if (isBrowserClosedError(err)) {
+        throw new Error(BROWSER_CLOSED_CODE);
+      }
       if (isChromeLockError(err)) {
         throw new Error(chromeLaunchErrorHe(err));
       }
@@ -63,6 +109,9 @@ export async function withBrowserPage<T>(
   try {
     return await fn(page, launched.context);
   } catch (err) {
+    if (isBrowserClosedError(err)) {
+      throw new Error(BROWSER_CLOSED_CODE);
+    }
     if (isChromeLockError(err)) {
       throw new Error(chromeLaunchErrorHe(err));
     }

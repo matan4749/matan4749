@@ -347,7 +347,11 @@ export default function App() {
       {awaitingLogin && (
         <div className="login-gate-overlay" role="dialog" aria-modal="true">
           <div className="login-gate-card">
-            <h2>התחברות לאתרים</h2>
+            <h2>
+              {progress.loginGate?.messageHe?.includes("הדפדפן נסגר")
+                ? "הדפדפן נסגר"
+                : "התחברות לאתרים"}
+            </h2>
             <p>
               {progress.loginGate?.messageHe ||
                 "התחבר לאתרים בחלון Chrome שנפתח. כשסיימת — לחץ המשך"}
@@ -377,7 +381,9 @@ export default function App() {
                 className="btn btn-primary"
                 onClick={() => void respondLoginGate("continue")}
               >
-                המשך לריצה
+                {progress.loginGate?.messageHe?.includes("הדפדפן נסגר")
+                  ? "התחבר שוב / המשך"
+                  : "המשך לריצה"}
               </button>
               <button
                 type="button"
@@ -777,15 +783,19 @@ export default function App() {
                   <input
                     type="number"
                     min={1}
-                    max={30}
+                    max={10}
                     value={settings.jobLimitPerSite}
                     onChange={(e) =>
                       setSettings({
                         ...settings,
-                        jobLimitPerSite: Number(e.target.value) || 5,
+                        jobLimitPerSite: Math.min(
+                          10,
+                          Math.max(1, Number(e.target.value) || 5),
+                        ),
                       })
                     }
                   />
+                  <p className="hint">ברירת מחדל 5 — יציב יותר כש-Easy Apply נתקע.</p>
                 </div>
 
                 <div className="field">

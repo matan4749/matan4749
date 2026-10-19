@@ -35,6 +35,17 @@ function normalize(
     rest.browserMode === "live" || rest.browserMode === "jobbot"
       ? rest.browserMode
       : base.browserMode;
+  // Stability: Matan's 20-per-site flooded flaky Easy Apply / closed-browser spam.
+  // Cap at 10; values above migrate down to the stable default of 5.
+  const rawLimit =
+    typeof rest.jobLimitPerSite === "number" ? rest.jobLimitPerSite : base.jobLimitPerSite;
+  const jobLimitPerSite =
+    !Number.isFinite(rawLimit) || rawLimit < 1
+      ? base.jobLimitPerSite
+      : rawLimit > 10
+        ? 5
+        : Math.floor(rawLimit);
+
   return {
     ...base,
     ...rest,
@@ -43,6 +54,7 @@ function normalize(
     chromeUserDataDir: chromeRaw ? normalizeChromeUserDataDir(chromeRaw) : "",
     browserMode,
     useChromeClone,
+    jobLimitPerSite,
     enabledSites:
       rest.enabledSites && rest.enabledSites.length
         ? sanitizeSites(rest.enabledSites)

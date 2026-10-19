@@ -1,40 +1,51 @@
-# Jobbot ל-Mac — התקנה (חלקים מאומתים)
+# Jobbot ל-Mac
 
-**חשוב:** מחק קבצי `Jobbot-mac.zip` ו-`.part` ישנים. הורד **שלושת** החלקים מ**אותו ביילד**, ואז חבר.
+# ⚠️ אסור ללחוץ פעמיים על Jobbot-mac.zip / Jobbot-mac.tar.gz
+# אל תפתח ארכיון ב-Finder / Archive Utility (Error 94)
+# רק Join או הפקודה למטה → מקבלים ישר Jobbot.app
 
-## SHA256 (ביילד זה)
+---
 
-| קובץ | SHA256 |
-|------|--------|
-| Jobbot-mac.zip (אחרי cat) | `9d4c6905979e7857085984b660239f87f46d003ff41d5884583e9e388d89e7b3` |
-| part00 | `b5309d67ccf9fdd2748123d5de79b44af9bfc6416b01a9414027d6cc45cdb187` |
-| part01 | `294f8685d3c9aec6e06c11bb4eca0f199f92bf47175c092d80d3f6ff9a07ff5d` |
-| part02 | `ed207740fb11d2b8d5f277f6c78bdc6ef9bd5aa2e153127cfee68d4d49d9f196` |
+## מה להוריד (ביילד tar.gz — לא zip!)
 
-גם ב-`SHA256SUMS.txt` בתיקיית media.
+1. `Jobbot-0.1.0-mac-arm64.tar.gz.part00`
+2. `Jobbot-0.1.0-mac-arm64.tar.gz.part01`
+3. `Jobbot-0.1.0-mac-arm64.tar.gz.part02`
+4. `Join-Jobbot-Mac.app.zip` (או `.command`)
 
-## חיבור + חילוץ (מומלץ — עוקף Error 94 של Archive Utility)
+**מחק** קבצי `.zip.part` / `Jobbot-mac.zip` ישנים.
 
-### Join.app / .command
-1. הורד `Join-Jobbot-Mac.app.zip` או `Join-Jobbot-Mac.command`
-2. שים ליד שלושת ה-`.part`
-3. לחיצה ימנית ← **פתח**
-4. Join בודק `unzip -t` ומחלץ `Jobbot.app` (לא דרך Archive Utility)
+## איך להתקין (הדרך היחידה)
 
-אם zip פגום: «הורד שוב את שלושת החלקים מאותו ביילד».
+1. שים את שלושת ה-`.tar.gz.part` + Join בתיקייה אחת (`Desktop/Jobbot`).
+2. לחיצה ימנית על Join ← **פתח**.
+3. Join מחבר + מחלץ אוטומטית → **Jobbot.app** מופיע.
+4. לחיצה ימנית על `Jobbot.app` ← פתח.
 
-### Terminal
+## Terminal (אם בלי Join)
 
 ```bash
 mkdir -p ~/Desktop/Jobbot && cd ~/Desktop/Jobbot
-# העבר לכאן את שלושת ה-.part ואז:
-rm -f Jobbot-mac.zip
-cat Jobbot-0.1.0-mac-arm64.zip.part00 Jobbot-0.1.0-mac-arm64.zip.part01 Jobbot-0.1.0-mac-arm64.zip.part02 > Jobbot-mac.zip
-shasum -a 256 Jobbot-mac.zip   # חייב להיות 9d4c6905979e7857085984b660239f87f46d003ff41d5884583e9e388d89e7b3
-unzip -t Jobbot-mac.zip && unzip -o Jobbot-mac.zip
+rm -f Jobbot-mac.tar.gz Jobbot-mac.zip
+cat Jobbot-0.1.0-mac-arm64.tar.gz.part00 Jobbot-0.1.0-mac-arm64.tar.gz.part01 Jobbot-0.1.0-mac-arm64.tar.gz.part02 > Jobbot-mac.tar.gz
+shasum -a 256 Jobbot-mac.tar.gz
+# חייב: 2258a77d1f0be5871796a6776830b2509b77b0f13e0f6bf5e87329324ba4cf0d
+tar -tzf Jobbot-mac.tar.gz && tar -xzf Jobbot-mac.tar.gz
+# עכשיו יש Jobbot.app — לא לפתוח את ה-.tar.gz בלחיצה כפולה
 ```
 
-אם Archive Utility אומר Error 94 / «הודעה לא תקינה» — **אל תשתמש בו**; השתמש ב-`unzip` או ב-Join כנ״ל.
+## SHA256
 
-## אחרי החילוץ
-לחיצה ימנית על `Jobbot.app` ← פתח. הגדר Chrome + «וודא ש־Chrome סגור».
+| קובץ | SHA256 |
+|------|--------|
+| Jobbot-mac.tar.gz | `2258a77d1f0be5871796a6776830b2509b77b0f13e0f6bf5e87329324ba4cf0d` |
+| part00 | `845235abceba53fbfa4e6defdc2793d5f4cf4943acca448491a1452a0d54ad45` |
+| part01 | `07821e79c174065cb727a6dfc5711b60b510b6791b8a4d2042ed7ee5edad3ef2` |
+| part02 | `52fd70e2726a29d688b74b78d266ce7c1e903e27b26ac752e3e0847621b40fae` |
+
+קובץ מלא: `SHA256SUMS.txt`
+
+## למה לא zip?
+
+Archive Utility ב-Mac נכשל על zip של Electron (Error 94) גם כש-`unzip -t` עובר.
+לכן העברנו ל-`.tar.gz` + Join שמחלץ לבד.

@@ -1,5 +1,5 @@
 #!/usr/bin/osascript
--- Join Jobbot Mac parts, verify zip, extract with unzip (avoids Archive Utility Error 94)
+-- Join .tar.gz parts and ALWAYS extract Jobbot.app (user never opens archive in Finder)
 
 on posixExists(p)
 	try
@@ -20,9 +20,9 @@ on dirExists(p)
 end dirExists
 
 on partsIn(folderPath)
-	set p0 to folderPath & "Jobbot-0.1.0-mac-arm64.zip.part00"
-	set p1 to folderPath & "Jobbot-0.1.0-mac-arm64.zip.part01"
-	set p2 to folderPath & "Jobbot-0.1.0-mac-arm64.zip.part02"
+	set p0 to folderPath & "Jobbot-0.1.0-mac-arm64.tar.gz.part00"
+	set p1 to folderPath & "Jobbot-0.1.0-mac-arm64.tar.gz.part01"
+	set p2 to folderPath & "Jobbot-0.1.0-mac-arm64.tar.gz.part02"
 	if posixExists(p0) and posixExists(p1) and posixExists(p2) then
 		return true
 	end if
@@ -36,8 +36,9 @@ end ensureSlash
 
 on corruptMsg()
 	return "הקובץ פגום אחרי חיבור החלקים." & return & return & ¬
-		"מחק את Jobbot-mac.zip ואת שלושת קבצי ה-.part הישנים," & return & ¬
-		"הורד שוב את שלושת החלקים מאותו ביילד, ונסה שוב."
+		"מחק Jobbot-mac.tar.gz / Jobbot-mac.zip ואת כל ה-.part הישנים" & return & ¬
+		"(כולל .zip.part הישנים!)," & return & ¬
+		"הורד שוב את שלושת החלקים החדשים (.tar.gz.part) מאותו ביילד, ונסה שוב."
 end corruptMsg
 
 on run
@@ -62,8 +63,6 @@ on run
 			set parentCmd to "dirname " & quoted form of (text 1 thru -2 of appPath)
 			set parentDir to ensureSlash(do shell script parentCmd)
 			set beginning of candidates to parentDir
-		else
-			set end of searched to "(דילוג — App Translocation)"
 		end if
 	end try
 
@@ -80,9 +79,8 @@ on run
 
 	if found is "" then
 		try
-			set theFolder to choose folder with prompt "בחר את התיקייה עם שלושת קבצי החלקים (.part00 .part01 .part02):"
+			set theFolder to choose folder with prompt "בחר תיקייה עם שלושת Jobbot-…tar.gz.part00/01/02:"
 			set found to ensureSlash(POSIX path of theFolder)
-			set end of searched to found & " (נבחר ידנית)"
 			if not partsIn(found) then set found to ""
 		on error
 			set found to ""
@@ -90,72 +88,61 @@ on run
 	end if
 
 	if found is "" then
-		set msg to "לא נמצאו קבצי החלקים." & return & return & ¬
-			"פתרון מומלץ:" & return & ¬
-			"1. העבר את שלושת החלקים לתיקייה חדשה בשולחן העבודה" & return & ¬
-			"2. פתח Terminal והדבק:" & return & return & ¬
-			"cd ~/Desktop/Jobbot && cat Jobbot-0.1.0-mac-arm64.zip.part00 Jobbot-0.1.0-mac-arm64.zip.part01 Jobbot-0.1.0-mac-arm64.zip.part02 > Jobbot-mac.zip && unzip -t Jobbot-mac.zip && unzip -o Jobbot-mac.zip" & return & return & ¬
-			"תיקיות שחיפשתי:" & return & my joinLines(searched)
-		display dialog msg buttons {"אישור"} default button 1 with title "Jobbot" with icon stop
+		display dialog "לא נמצאו קבצי .tar.gz.part" & return & return & ¬
+			"הורד:" & return & ¬
+			"Jobbot-0.1.0-mac-arm64.tar.gz.part00" & return & ¬
+			"Jobbot-0.1.0-mac-arm64.tar.gz.part01" & return & ¬
+			"Jobbot-0.1.0-mac-arm64.tar.gz.part02" & return & return & ¬
+			"אל תשתמש ב-.zip.part ישנים." & return & return & ¬
+			"⚠️ אסור ללחוץ פעמיים על ארכיון ב-Finder." buttons {"אישור"} default button 1 with title "Jobbot" with icon stop
 		return
 	end if
 
-	set outFile to found & "Jobbot-mac.zip"
-	set joinCmd to "cd " & quoted form of found & " && /bin/rm -f Jobbot-mac.zip && /bin/cat Jobbot-0.1.0-mac-arm64.zip.part00 Jobbot-0.1.0-mac-arm64.zip.part01 Jobbot-0.1.0-mac-arm64.zip.part02 > Jobbot-mac.zip"
+	set outFile to found & "Jobbot-mac.tar.gz"
+	set joinCmd to "cd " & quoted form of found & " && /bin/rm -f Jobbot-mac.tar.gz Jobbot-mac.zip && /bin/cat Jobbot-0.1.0-mac-arm64.tar.gz.part00 Jobbot-0.1.0-mac-arm64.tar.gz.part01 Jobbot-0.1.0-mac-arm64.tar.gz.part02 > Jobbot-mac.tar.gz"
 	try
 		do shell script joinCmd
 	on error errMsg
-		display dialog "שגיאה בחיבור הקבצים:" & return & errMsg buttons {"אישור"} default button 1 with title "Jobbot" with icon stop
+		display dialog "שגיאה בחיבור:" & return & errMsg buttons {"אישור"} default button 1 with title "Jobbot" with icon stop
 		return
 	end try
 
-	-- Verify zip magic PK\x03\x04
+	-- gzip magic 1f 8b
 	try
-		set magic to do shell script "dd if=" & quoted form of outFile & " bs=4 count=1 2>/dev/null | od -An -tx1 | tr -d ' \\n'"
-		if magic is not "504b0304" then error "bad magic"
+		set magic to do shell script "dd if=" & quoted form of outFile & " bs=2 count=1 2>/dev/null | od -An -tx1 | tr -d ' \\n'"
+		if magic is not "1f8b" then error "bad magic"
 	on error
 		do shell script "/bin/rm -f " & quoted form of outFile
-		display dialog my corruptMsg() buttons {"אישור"} default button 1 with title "Jobbot — zip פגום" with icon stop
+		display dialog my corruptMsg() buttons {"אישור"} default button 1 with title "Jobbot — פגום" with icon stop
 		return
 	end try
 
-	-- unzip -t
 	try
-		do shell script "/usr/bin/unzip -t " & quoted form of outFile
+		do shell script "/usr/bin/tar -tzf " & quoted form of outFile & " >/dev/null"
 	on error
 		do shell script "/bin/rm -f " & quoted form of outFile
-		display dialog my corruptMsg() buttons {"אישור"} default button 1 with title "Jobbot — zip פגום" with icon stop
+		display dialog my corruptMsg() buttons {"אישור"} default button 1 with title "Jobbot — פגום" with icon stop
 		return
 	end try
 
-	-- Extract with unzip (avoid Archive Utility Error 94)
+	-- ALWAYS extract — user must not double-click the archive
 	try
-		do shell script "cd " & quoted form of found & " && /bin/rm -rf Jobbot.app && /usr/bin/unzip -o -q Jobbot-mac.zip"
+		do shell script "cd " & quoted form of found & " && /bin/rm -rf Jobbot.app && /usr/bin/tar -xzf Jobbot-mac.tar.gz"
 	on error errMsg
-		display dialog "ה־zip תקין אבל החילוץ נכשל:" & return & errMsg & return & return & ¬
-			"נסה בטרמינל: unzip -o Jobbot-mac.zip" buttons {"הצג zip ב-Finder"} default button 1 with title "Jobbot"
-		try
-			do shell script "/usr/bin/open -R " & quoted form of outFile
-		end try
+		display dialog "חילוץ נכשל:" & return & errMsg & return & return & my corruptMsg() buttons {"אישור"} default button 1 with title "Jobbot" with icon stop
 		return
 	end try
 
 	set appOut to found & "Jobbot.app"
-	display dialog "הצלחה — Jobbot.app מוכן." & return & found & return & return & ¬
-		"אם macOS חוסם: לחיצה ימנית על Jobbot.app ← פתח" & return & return & ¬
-		"אל תלחץ פעמיים על ה־zip ב-Archive Utility אם קיבלת Error 94 — Join כבר חילץ." buttons {"הצג ב-Finder"} default button 1 with title "Jobbot מוכן"
+	if not dirExists(appOut) then
+		display dialog my corruptMsg() buttons {"אישור"} default button 1 with title "Jobbot" with icon stop
+		return
+	end if
+
+	display dialog "✅ Jobbot.app מוכן!" & return & found & return & return & ¬
+		"⚠️ אסור ללחוץ פעמיים על Jobbot-mac.tar.gz / .zip ב-Finder." & return & ¬
+		"רק על Jobbot.app (לחיצה ימנית ← פתח אם חוסמים)." buttons {"הצג את Jobbot.app"} default button 1 with title "Jobbot מוכן"
 	try
-		if posixExists(appOut & "/Contents/MacOS/Jobbot") or dirExists(appOut) then
-			do shell script "/usr/bin/open -R " & quoted form of appOut
-		else
-			do shell script "/usr/bin/open -R " & quoted form of outFile
-		end if
+		do shell script "/usr/bin/open -R " & quoted form of appOut
 	end try
 end run
-
-on joinLines(lst)
-	set AppleScript's text item delimiters to return
-	set t to lst as text
-	set AppleScript's text item delimiters to ""
-	return t
-end joinLines

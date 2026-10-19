@@ -117,8 +117,10 @@ export default function App() {
     }
   }
 
-  function applyPlanToSettings(plan: RunPlan) {
-    if (!settings) return;
+  async function applyPlanToSettings(plan: RunPlan): Promise<{ ok: boolean; messageHe: string }> {
+    if (!settings || !api) {
+      return { ok: false, messageHe: "הגדרות לא זמינות — נסה שוב" };
+    }
     const next: AppSettings = {
       ...settings,
       keywords: plan.keywords.length ? plan.keywords : settings.keywords,
@@ -128,24 +130,19 @@ export default function App() {
     };
     setSearchMode(plan.searchMode);
     setSelectedKeywords(plan.keywords.length ? plan.keywords : selectedKeywords);
-    void persist(next);
-    setStatusMsg(`תוכנית הוחלה: ${plan.summaryHe}`);
+    setSettings(next);
+    await api.saveSettings(next);
+    const msg = `✓ התוכנית הוחלה להגדרות: ${plan.summaryHe || plan.searchMode}`;
+    setStatusMsg(msg);
+    return { ok: true, messageHe: msg };
   }
 
-  async function startRun(fromPlan?: RunPlan) {
-    if (!api || !settings || running) return;
-    if (!settings.chromeUserDataDir?.trim()) {
-      setTab("settings");
-      setStatusMsg(
-        "להגשות אמיתיות חובה להגדיר נתיב Chrome ולהתחבר ללינקדאין/אינדיד — ראה השלבים בהגדרות",
-      );
-      return;
+  async function startRun(fromPlan?: RunPlan): Promise<{ ok: boolean; messageHe: string }> {
+    if (!api || !settings) {
+      return { ok: false, messageHe: "Electron API לא זמין" };
     }
-    // Always re-check Chrome closed before start (same Hebrew messages as the button)
-    const safe = await verifyChromeClosed();
-    if (!safe) {
-      setTab("settings");
-      return;
+    if (running) {
+      return { ok: false, messageHe: "כבר רצה ריצה — לחץ עצור קודם" };
     }
 
     let activeSettings = settings;
@@ -153,25 +150,40 @@ export default function App() {
     let kws = selectedKeywords;
     let searchOnly = false;
     if (fromPlan) {
-      activeSettings = {
-        ...settings,
-        keywords: fromPlan.keywords.length ? fromPlan.keywords : settings.keywords,
-        enabledSites: fromPlan.enabledSites.length ? fromPlan.enabledSites : settings.enabledSites,
-        location: fromPlan.location || settings.location,
-        jobLimitPerSite: fromPlan.jobLimitPerSite || settings.jobLimitPerSite,
-      };
+      // ChatPanel may already have applied; apply again is idempotent and keeps state fresh
+      const applied = await applyPlanToSettings(fromPlan);
+      if (!applied.ok) return applied;
+      activeSettings = await api.getSettings();
       mode = fromPlan.searchMode;
-      kws = fromPlan.keywords;
+      kws = fromPlan.keywords.length ? fromPlan.keywords : activeSettings.keywords;
       searchOnly = fromPlan.applyMode === "search-only";
-      setSettings(activeSettings);
       setSearchMode(mode);
       setSelectedKeywords(kws);
-      await api.saveSettings(activeSettings);
+    }
+
+    if (!activeSettings.chromeUserDataDir?.trim()) {
+      const msg =
+        "נחסם: אין נתיב Chrome. עבור להגדרות, בחר פרופיל Chrome, ואז «הפעל ריצה» שוב.";
+      setStatusMsg(msg);
+      setTab("settings");
+      return { ok: false, messageHe: msg };
+    }
+
+    setStatusMsg("בודק ש-Chrome סגור…");
+    const safe = await verifyChromeClosed();
+    if (!safe) {
+      const msg =
+        chromeClosedMsg ||
+        "Chrome עדיין פתוח — לחץ Cmd+Q ונסה שוב";
+      setStatusMsg(msg);
+      // Stay/return feedback to chat; also show settings tip
+      setTab("settings");
+      return { ok: false, messageHe: msg };
     }
 
     setRunning(true);
     setTab("run");
-    setStatusMsg("");
+    setStatusMsg(searchOnly ? "רץ (חיפוש בלבד)…" : "רץ…");
     const config: RunConfig = {
       searchMode: mode,
       keywords: mode === "keywords" ? kws : [],
@@ -188,23 +200,39 @@ export default function App() {
       setProgress(result.progress);
       setReportHtml(result.reportHtml);
       if (result.progress.phase === "error" || result.email.error === "CHROME_PROFILE_REQUIRED") {
-        setStatusMsg("הריצה נעצרה — חסר נתיב Chrome מחובר");
+        const msg = "הריצה נעצרה — חסר נתיב Chrome מחובר";
+        setStatusMsg(msg);
         setTab("settings");
-      } else if (config.searchOnly) {
-        setStatusMsg(`חיפוש בלבד — נמצאו ${result.progress.found} (ללא הגשות)`);
-      } else if (result.progress.applied === 0) {
-        setStatusMsg(
-          "לא הוגשו מועמדויות מאומתות — בדוק לוגים (התחברות / Easy Apply / אישור מסך)",
-        );
-      } else if (result.email.previewOnly) {
-        setStatusMsg(`הוגשו ${result.progress.applied} · הדוח נשמר מקומית`);
-      } else if (!result.email.ok) {
-        setStatusMsg(result.email.error || "שליחת מייל נכשלה");
-      } else {
-        setStatusMsg(`הוגשו ${result.progress.applied} · הדוח נשלח`);
+        return { ok: false, messageHe: msg };
       }
+      if (config.searchOnly) {
+        const msg = `✓ חיפוש בלבד — נמצאו ${result.progress.found} (ללא הגשות)`;
+        setStatusMsg(msg);
+        return { ok: true, messageHe: msg };
+      }
+      if (result.progress.applied === 0) {
+        const msg =
+          "הריצה הסתיימה — לא הוגשו מועמדויות מאומתות (בדוק לוגים בטאב ריצה)";
+        setStatusMsg(msg);
+        return { ok: true, messageHe: msg };
+      }
+      if (result.email.previewOnly) {
+        const msg = `✓ הוגשו ${result.progress.applied} · הדוח נשמר מקומית`;
+        setStatusMsg(msg);
+        return { ok: true, messageHe: msg };
+      }
+      if (!result.email.ok) {
+        const msg = result.email.error || "שליחת מייל נכשלה";
+        setStatusMsg(msg);
+        return { ok: true, messageHe: `הוגשו ${result.progress.applied} · ${msg}` };
+      }
+      const msg = `✓ הוגשו ${result.progress.applied} · הדוח נשלח`;
+      setStatusMsg(msg);
+      return { ok: true, messageHe: msg };
     } catch (err) {
-      setStatusMsg(err instanceof Error ? err.message : String(err));
+      const msg = err instanceof Error ? err.message : String(err);
+      setStatusMsg(msg);
+      return { ok: false, messageHe: msg };
     } finally {
       setRunning(false);
     }
@@ -306,7 +334,7 @@ export default function App() {
               settings={settings}
               running={running}
               onApplyPlan={(p) => applyPlanToSettings(p)}
-              onStartFromPlan={(p) => void startRun(p)}
+              onStartFromPlan={(p) => startRun(p)}
             />
           )}
 

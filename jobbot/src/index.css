@@ -605,10 +605,31 @@ a {
 }
 
 .chat-plan {
+  position: relative;
+  z-index: 5;
+  pointer-events: auto;
   border: 1px solid var(--line);
   border-radius: 14px;
   padding: 12px 14px;
   background: rgba(61, 255, 200, 0.06);
+}
+
+.chat-plan-actions {
+  position: relative;
+  z-index: 6;
+  pointer-events: auto;
+}
+
+.chat-plan-actions .btn {
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.chat-action-feedback {
+  margin: 10px 0 0;
+  font-size: 0.9rem;
+  font-weight: 600;
+  line-height: 1.45;
 }
 
 .chat-plan h3 {

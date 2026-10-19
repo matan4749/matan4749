@@ -281,6 +281,48 @@ def main() -> None:
     except OSError:
         pass
 
+    # 3) Copy-logs helper (Matan pastes zip to chat)
+    logs_cmd_path = ROOT / "העתק-לוגים.command"
+    if logs_cmd_path.exists():
+        logs_bytes = logs_cmd_path.read_bytes()
+    else:
+        logs_bytes = b"#!/bin/bash\necho missing\n"
+    write_zip(
+        MEDIA / "העתק-לוגים.command.zip",
+        {"העתק-לוגים.command": (logs_bytes, 0o755)},
+    )
+    write_zip(
+        MEDIA / "Copy-Jobbot-Logs.command.zip",
+        {"Copy-Jobbot-Logs.command": (logs_bytes, 0o755)},
+    )
+    (MEDIA / "העתק-לוגים.command").write_bytes(logs_bytes)
+    try:
+        (MEDIA / "העתק-לוגים.command").chmod(0o755)
+    except OSError:
+        pass
+
+    logs_launcher = (
+        "#!/bin/bash\n"
+        'export PATH="/usr/local/bin:/opt/homebrew/bin:$PATH"\n'
+        'DIR="$(cd "$(dirname "$0")" && pwd)"\n'
+        "osascript -e 'display dialog \"מעתיק לוגים לשולחן העבודה…\" "
+        'buttons {"OK"} default button 1 giving up after 2 with title "Jobbot"\' '
+        ">/dev/null 2>&1 &\n"
+        'bash "$DIR/../Resources/copy-logs.sh"\n'
+    ).encode("utf-8")
+    logs_plist = INFO_PLIST.replace("הפעל-Jobbot", "העתק-לוגים").replace(
+        "הפעל Jobbot", "העתק לוגים Jobbot"
+    ).replace("life.matan.jobbot.launcher", "life.matan.jobbot.copylogs")
+    write_zip(
+        MEDIA / "העתק-לוגים.app.zip",
+        {
+            "העתק-לוגים.app/Contents/Info.plist": (logs_plist.encode("utf-8"), 0o644),
+            "העתק-לוגים.app/Contents/MacOS/launcher": (logs_launcher, 0o755),
+            "העתק-לוגים.app/Contents/Resources/copy-logs.sh": (logs_bytes, 0o755),
+            "העתק-לוגים.app/Contents/PkgInfo": (b"APPL????", 0o644),
+        },
+    )
+
     print("OK media=", MEDIA)
 
 

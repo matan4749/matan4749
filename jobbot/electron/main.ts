@@ -193,7 +193,21 @@ function registerIpc(): void {
     const result = await r.run(settings, payload.config);
     lastReportHtml = result.reportHtml;
     const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-    fs.writeFileSync(path.join(dataDir(), "runs", `report-${stamp}.html`), result.reportHtml, "utf8");
+    const runsDir = path.join(dataDir(), "runs");
+    fs.mkdirSync(runsDir, { recursive: true });
+    fs.writeFileSync(path.join(runsDir, `report-${stamp}.html`), result.reportHtml, "utf8");
+    // Persist progress + Hebrew logs for Matan to send us
+    const runDump = {
+      stamp,
+      finishedAt: new Date().toISOString(),
+      email: result.email,
+      learningNotes: result.learningNotes,
+      progress: result.progress,
+      dataDir: dataDir(),
+      browserMode: settings.browserMode,
+    };
+    fs.writeFileSync(path.join(runsDir, `run-${stamp}.json`), JSON.stringify(runDump, null, 2), "utf8");
+    fs.writeFileSync(path.join(runsDir, "latest.json"), JSON.stringify(runDump, null, 2), "utf8");
     return result;
   });
 

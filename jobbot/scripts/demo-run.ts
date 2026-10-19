@@ -48,10 +48,23 @@ async function main() {
     found: result.progress.found,
     applied: result.progress.applied,
     failed: result.progress.failed,
+    skipped: result.progress.skipped,
     report: out,
     email: result.email,
     learningNotes: result.learningNotes,
   });
+
+  // Honest-run gate: demo must never claim real applications
+  if (result.progress.applied !== 0) {
+    console.error("FAIL: demo run reported applied > 0 — false success");
+    process.exit(1);
+  }
+  const fakeApplied = result.progress.results.filter((r) => r.status === "applied");
+  if (fakeApplied.length > 0) {
+    console.error("FAIL: result rows with status=applied in demo:", fakeApplied.length);
+    process.exit(1);
+  }
+  console.log("OK: applied=0 (honest demo)");
 }
 
 main().catch((e) => {

@@ -48,11 +48,16 @@ export interface CloneResult {
   sourcePath: string;
 }
 
-function shouldCopy(srcPath: string): boolean {
+/** Exported for unit tests — false for Singleton* / heavy cache dirs */
+export function shouldCopyPath(srcPath: string): boolean {
   const base = path.basename(srcPath);
   if (SKIP_BASENAMES.has(base)) return false;
   if (SKIP_DIRNAMES.has(base)) return false;
   return true;
+}
+
+function shouldCopy(srcPath: string): boolean {
+  return shouldCopyPath(srcPath);
 }
 
 function cookiesPath(userDataDir: string, profile = "Default"): string {

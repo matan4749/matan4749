@@ -35,9 +35,18 @@ export default function App() {
   );
   const [chromeProbeMsg, setChromeProbeMsg] = useState("");
   const [probing, setProbing] = useState(false);
+  const [chromeClosedMsg, setChromeClosedMsg] = useState("");
+  const [chromeClosedOk, setChromeClosedOk] = useState(false);
+  const [chromeClosedAt, setChromeClosedAt] = useState<number | null>(null);
+  const [checkingClosed, setCheckingClosed] = useState(false);
 
   const api = window.jobbot;
   const chromeReady = Boolean(settings?.chromeUserDataDir?.trim());
+  /** Fresh closed-check within last 5 minutes */
+  const chromeClosedFresh =
+    chromeClosedOk &&
+    chromeClosedAt != null &&
+    Date.now() - chromeClosedAt < 5 * 60 * 1000;
 
   useEffect(() => {
     if (!api) {
@@ -83,6 +92,29 @@ export default function App() {
     if (api) await api.saveSettings(next);
   }
 
+  async function verifyChromeClosed(): Promise<boolean> {
+    if (!api) return false;
+    setCheckingClosed(true);
+    setChromeClosedMsg("בודק אם Chrome סגור…");
+    try {
+      const r = await api.checkChromeClosed(settings?.chromeUserDataDir || undefined);
+      setChromeClosedMsg(r.messageHe);
+      setChromeClosedOk(r.ok);
+      setChromeClosedAt(r.ok ? Date.now() : null);
+      setStatusMsg(r.messageHe);
+      return r.ok;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setChromeClosedMsg(msg);
+      setChromeClosedOk(false);
+      setChromeClosedAt(null);
+      setStatusMsg(msg);
+      return false;
+    } finally {
+      setCheckingClosed(false);
+    }
+  }
+
   async function startRun() {
     if (!api || !settings || running) return;
     if (!settings.chromeUserDataDir?.trim()) {
@@ -90,6 +122,12 @@ export default function App() {
       setStatusMsg(
         "להגשות אמיתיות חובה להגדיר נתיב Chrome ולהתחבר ללינקדאין/אינדיד — ראה השלבים בהגדרות",
       );
+      return;
+    }
+    // Always re-check Chrome closed before start (same Hebrew messages as the button)
+    const safe = await verifyChromeClosed();
+    if (!safe) {
+      setTab("settings");
       return;
     }
     setRunning(true);
@@ -231,9 +269,17 @@ export default function App() {
               <div className="cta-row rise-delay">
                 <button
                   type="button"
+                  className="btn"
+                  disabled={checkingClosed || running}
+                  onClick={() => void verifyChromeClosed()}
+                >
+                  {checkingClosed ? "בודק…" : "וודא ש־Chrome סגור"}
+                </button>
+                <button
+                  type="button"
                   className="btn btn-primary"
                   onClick={() => void startRun()}
-                  disabled={running}
+                  disabled={running || checkingClosed}
                 >
                   {running ? "רץ…" : chromeReady ? "התחל ריצה אמיתית" : "הגדר Chrome קודם"}
                 </button>
@@ -241,6 +287,15 @@ export default function App() {
                   הגדרות
                 </button>
               </div>
+              {chromeClosedMsg && (
+                <p
+                  className="hint rise-delay"
+                  style={{ color: chromeClosedOk ? "var(--ok, #6bcf8e)" : "var(--danger)" }}
+                >
+                  {chromeClosedMsg}
+                  {chromeClosedFresh ? " · בדיקה תקפה" : ""}
+                </p>
+              )}
               {!chromeReady && (
                 <p className="hint rise-delay" style={{ color: "var(--danger)" }}>
                   להגשות אמיתיות חובה נתיב Chrome מחובר ללינקדאין/אינדיד — לחץ הגדרות.
@@ -324,8 +379,23 @@ export default function App() {
                 )}
 
                 <div className="cta-row">
+                  {!running && (
+                    <button
+                      type="button"
+                      className="btn"
+                      disabled={checkingClosed}
+                      onClick={() => void verifyChromeClosed()}
+                    >
+                      {checkingClosed ? "בודק…" : "בדיקה לפני התחלה"}
+                    </button>
+                  )}
                   {!running ? (
-                    <button type="button" className="btn btn-primary" onClick={() => void startRun()}>
+                    <button
+                      type="button"
+                      className="btn btn-primary"
+                      disabled={checkingClosed}
+                      onClick={() => void startRun()}
+                    >
                       התחל
                     </button>
                   ) : (
@@ -339,6 +409,14 @@ export default function App() {
                     </button>
                   )}
                 </div>
+                {chromeClosedMsg && !statusMsg && (
+                  <p
+                    className="hint"
+                    style={{ color: chromeClosedOk ? "var(--ok, #6bcf8e)" : "var(--danger)" }}
+                  >
+                    {chromeClosedMsg}
+                  </p>
+                )}
                 {statusMsg && <p className="hint">{statusMsg}</p>}
               </section>
 
@@ -426,6 +504,14 @@ export default function App() {
                     <button
                       type="button"
                       className="btn btn-primary"
+                      disabled={checkingClosed || running}
+                      onClick={() => void verifyChromeClosed()}
+                    >
+                      {checkingClosed ? "בודק…" : "וודא ש־Chrome סגור"}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn"
                       disabled={probing || !settings.chromeUserDataDir.trim()}
                       onClick={() => void probeChrome(false)}
                     >
@@ -440,9 +526,18 @@ export default function App() {
                       רענון עותק פרופיל
                     </button>
                   </div>
+                  {chromeClosedMsg && (
+                    <p
+                      className="hint"
+                      style={{ color: chromeClosedOk ? "var(--ok, #6bcf8e)" : "var(--danger)" }}
+                    >
+                      {chromeClosedMsg}
+                    </p>
+                  )}
                   {chromeProbeMsg && <p className="hint">{chromeProbeMsg}</p>}
                   <p className="hint">
-                    Jobbot לא מבקש סיסמאות — מעתיק סשן מחובר לעותק פרטי ופותח אותו בנפרד.
+                    לפני התחלה: «וודא ש־Chrome סגור» (או שההתחלה תבדוק אוטומטית). Jobbot לא מבקש
+                    סיסמאות — מעתיק סשן לעותק פרטי.
                   </p>
                 </div>
 

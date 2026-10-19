@@ -12,6 +12,7 @@ import {
   probeChromeProfile,
   resolveChromeUserDataDir,
 } from "../core/browser/probe";
+import { checkChromeClosed } from "../core/browser/chrome-lock";
 import type { AppSettings, RunConfig } from "../core/types";
 
 let mainWindow: BrowserWindow | null = null;
@@ -159,6 +160,12 @@ function registerIpc(): void {
       });
     },
   );
+
+  ipcMain.handle("chrome:checkClosed", async (_e, chromeUserDataDir?: string) => {
+    const raw = chromeUserDataDir?.trim() || "";
+    const resolved = raw ? resolveChromeUserDataDir(raw) : "";
+    return checkChromeClosed(resolved);
+  });
 
   ipcMain.handle("chrome:resolvePath", (_e, raw: string) => resolveChromeUserDataDir(raw));
 

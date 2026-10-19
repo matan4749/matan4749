@@ -1,4 +1,6 @@
 import { execFile } from "node:child_process";
+import fs from "node:fs";
+import path from "node:path";
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
@@ -6,6 +8,11 @@ const execFileAsync = promisify(execFile);
 /** Shown when Chrome profile is locked / still running */
 export const CHROME_QUIT_MSG_HE =
   "סגור את Chrome לגמרי עם Cmd+Q (לא רק לסגור חלון), ודא שאין Chrome ב־Dock עם נקודה, ואז הרץ שוב.";
+
+export const CHROME_STILL_OPEN_HE =
+  "Chrome עדיין פתוח — לחץ Cmd+Q ונסה שוב";
+
+export const CHROME_CLOSED_OK_HE = "Chrome סגור — אפשר להתחיל";
 
 export const CHROME_CLONE_HINT_HE =
   "Jobbot משתמש בעותק פרופיל נפרד — אחרי סנכרון ראשון אפשר להשאיר את Chrome פתוח. אם הסנכרון נכשל בזמן ש-Chrome פתוח, סגור פעם אחת עם Cmd+Q.";
@@ -59,4 +66,83 @@ export async function isChromeRunning(): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+const LOCK_NAMES = ["SingletonLock", "SingletonCookie", "SingletonSocket"] as const;
+
+/**
+ * Resolve Chrome user-data root (parent if path points at Default/Profile N).
+ */
+export function chromeUserDataRoot(userDataDir: string): string {
+  const trimmed = (userDataDir || "").trim();
+  if (!trimmed) return "";
+  const base = path.basename(trimmed);
+  if (base === "Default" || /^Profile \d+$/i.test(base)) {
+    return path.dirname(trimmed);
+  }
+  return trimmed;
+}
+
+/** True if SingletonLock (or sibling lock files) exist under the profile root */
+export function hasProfileSingletonLock(userDataDir: string): boolean {
+  const root = chromeUserDataRoot(userDataDir);
+  if (!root || !fs.existsSync(root)) return false;
+  for (const name of LOCK_NAMES) {
+    try {
+      if (fs.existsSync(path.join(root, name))) return true;
+    } catch {
+      /* ignore */
+    }
+  }
+  return false;
+}
+
+export interface ChromeClosedCheck {
+  ok: boolean;
+  chromeRunning: boolean;
+  profileLocked: boolean;
+  pathChecked: string;
+  messageHe: string;
+  checkedAt: string;
+}
+
+/**
+ * Pre-start safety: Chrome process not running + no SingletonLock on source profile.
+ * Clear Hebrew result — no stack dumps.
+ */
+export async function checkChromeClosed(userDataDir?: string): Promise<ChromeClosedCheck> {
+  const pathChecked = chromeUserDataRoot((userDataDir || "").trim());
+  const chromeRunning = await isChromeRunning();
+  const profileLocked = pathChecked ? hasProfileSingletonLock(pathChecked) : false;
+  const ok = !chromeRunning && !profileLocked;
+  const checkedAt = new Date().toISOString();
+
+  if (ok) {
+    return {
+      ok: true,
+      chromeRunning: false,
+      profileLocked: false,
+      pathChecked,
+      messageHe: CHROME_CLOSED_OK_HE,
+      checkedAt,
+    };
+  }
+
+  let messageHe = CHROME_STILL_OPEN_HE;
+  if (chromeRunning && profileLocked) {
+    messageHe =
+      "Chrome עדיין פתוח (תהליך + נעילת פרופיל) — לחץ Cmd+Q ונסה שוב";
+  } else if (profileLocked && !chromeRunning) {
+    messageHe =
+      "נמצאה נעילת פרופיל (SingletonLock) — לחץ Cmd+Q, ודא שאין נקודה ב־Dock, ונסה שוב";
+  }
+
+  return {
+    ok: false,
+    chromeRunning,
+    profileLocked,
+    pathChecked,
+    messageHe,
+    checkedAt,
+  };
 }

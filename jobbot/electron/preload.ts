@@ -11,6 +11,15 @@ export interface ChromeProbeResult {
   detail?: string;
 }
 
+export interface ChromeClosedCheck {
+  ok: boolean;
+  chromeRunning: boolean;
+  profileLocked: boolean;
+  pathChecked: string;
+  messageHe: string;
+  checkedAt: string;
+}
+
 export interface JobbotApi {
   getSettings: () => Promise<AppSettings>;
   saveSettings: (settings: AppSettings) => Promise<AppSettings>;
@@ -53,6 +62,7 @@ export interface JobbotApi {
     chromeUserDataDir: string,
     opts?: { forceSync?: boolean },
   ) => Promise<ChromeProbeResult>;
+  checkChromeClosed: (chromeUserDataDir?: string) => Promise<ChromeClosedCheck>;
   resolveChromePath: (raw: string) => Promise<string>;
   isPackaged: () => Promise<boolean>;
   onProgress: (cb: (progress: RunProgress) => void) => () => void;
@@ -75,6 +85,8 @@ const api: JobbotApi = {
   getChromeHint: () => ipcRenderer.invoke("chrome:defaultHint"),
   probeChrome: (chromeUserDataDir, opts) =>
     ipcRenderer.invoke("chrome:probe", chromeUserDataDir, opts),
+  checkChromeClosed: (chromeUserDataDir) =>
+    ipcRenderer.invoke("chrome:checkClosed", chromeUserDataDir),
   resolveChromePath: (raw) => ipcRenderer.invoke("chrome:resolvePath", raw),
   isPackaged: () => ipcRenderer.invoke("app:isPackaged"),
   onProgress: (cb) => {

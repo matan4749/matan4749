@@ -157,10 +157,15 @@ function registerIpc(): void {
 
   ipcMain.handle(
     "chrome:probe",
-    async (_e, chromeUserDataDir: string, opts?: { forceSync?: boolean }) => {
+    async (
+      _e,
+      chromeUserDataDir: string,
+      opts?: { forceSync?: boolean; useClone?: boolean },
+    ) => {
       return probeChromeProfile(chromeUserDataDir, {
         dataDir: dataDir(),
         forceSync: opts?.forceSync,
+        useClone: opts?.useClone,
       });
     },
   );

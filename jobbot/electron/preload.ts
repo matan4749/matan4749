@@ -6,8 +6,11 @@ export interface ChromeProbeResult {
   ok: boolean;
   pathExists: boolean;
   pathUsed: string;
+  launchPath?: string;
+  mode?: "live" | "clone";
   linkedInLoggedIn: boolean | null;
   indeedReachable: boolean | null;
+  chromeWasRunning?: boolean;
   messageHe: string;
   detail?: string;
 }
@@ -70,7 +73,7 @@ export interface JobbotApi {
   getChromeHint: () => Promise<string>;
   probeChrome: (
     chromeUserDataDir: string,
-    opts?: { forceSync?: boolean },
+    opts?: { forceSync?: boolean; useClone?: boolean },
   ) => Promise<ChromeProbeResult>;
   checkChromeClosed: (chromeUserDataDir?: string) => Promise<ChromeClosedCheck>;
   resolveChromePath: (raw: string) => Promise<string>;

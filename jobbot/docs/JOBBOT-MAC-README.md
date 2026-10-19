@@ -42,12 +42,12 @@ open -R Jobbot.app
 ## צ׳אט
 טאב «צ׳אט» באפליקציה — תכנון ריצה בעברית.
 
-## Chrome / EPERM (חשוב!)
-נתיב נכון: `/Users/matan_amar/Library/Application Support/Google/Chrome`
-(**בלי** `/Default` בסוף).
+## Chrome — פרופיל חי (ברירת מחדל)
+Jobbot פותח את **Chrome שלך** עם הפרופיל המחובר (לא פרופיל ריק).
 
-אם מופיע `EPERM: operation not permitted`:
-1. **הגדרות מערכת → פרטיות ואבטחה → Full Disk Access** → הפעל את **Jobbot**
-2. הפעל מחדש את Jobbot
-3. סגור Chrome לגמרי עם **Cmd+Q**
-4. בהגדרות: «מלא נתיב Mac ברירת מחדל» או «בחר תיקיית Chrome»
+1. נתיב: `/Users/matan_amar/Library/Application Support/Google/Chrome` (**בלי** `/Default`)
+2. סגור Chrome לגמרי עם **Cmd+Q** לפני ריצה
+3. **הגדרות מערכת → פרטיות ואבטחה → Full Disk Access** → הפעל **Jobbot** → הפעל מחדש
+4. אופציונלי: «השתמש בעותק / אפשר Chrome פתוח» — רק אם רוצים להשאיר Chrome פתוח; אם העותק בלי Cookies / מסך התחברות — Jobbot עוצר
+
+אם מופיע מסך התחברות ריק בלינקדאין או באנר `--no-sandbox` — התקן את הגרסה החדשה (ללא `--no-sandbox` / ללא mock keychain).

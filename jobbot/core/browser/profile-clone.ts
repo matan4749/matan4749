@@ -10,6 +10,7 @@ import {
   isChromeEpermError,
   normalizeChromeUserDataDir,
 } from "./chrome-paths";
+import { assertChromeSessionArtifacts, checkChromeSessionArtifacts } from "./session-artifacts";
 
 const execFileAsync = promisify(execFile);
 
@@ -199,17 +200,24 @@ export async function ensureJobbotChromeProfile(opts: {
 
   if (!needs) {
     scrubSingletonFiles(cloneRoot);
-    log(`עותק פרופיל Jobbot מוכן (ללא סנכרון מחדש): ${cloneRoot}`);
-    return {
-      path: cloneRoot,
-      synced: false,
-      skippedHeavy: true,
-      chromeWasRunning,
-      sourcePath: sourceRoot,
-      messageHe: chromeWasRunning
-        ? "משתמש בעותק פרופיל קיים — אפשר להשאיר את Chrome פתוח."
-        : "משתמש בעותק פרופיל קיים.",
-    };
+    const existing = checkChromeSessionArtifacts(cloneRoot, profile);
+    if (!existing.ok) {
+      // Stale/empty clone — force a full resync instead of launching blank
+      log("עותק קיים בלי Cookies — מסנכרן מחדש מהפרופיל החי…");
+      needs = true;
+    } else {
+      log(`עותק פרופיל Jobbot מוכן (ללא סנכרון מחדש): ${cloneRoot}`);
+      return {
+        path: cloneRoot,
+        synced: false,
+        skippedHeavy: true,
+        chromeWasRunning,
+        sourcePath: sourceRoot,
+        messageHe: chromeWasRunning
+          ? "משתמש בעותק פרופיל קיים — אפשר להשאיר את Chrome פתוח."
+          : "משתמש בעותק פרופיל קיים.",
+      };
+    }
   }
 
   log(
@@ -221,7 +229,14 @@ export async function ensureJobbotChromeProfile(opts: {
 
   fs.mkdirSync(cloneRoot, { recursive: true });
 
-  for (const name of ["Local State", "First Run"]) {
+  // Top-level bits Chrome needs to recognize the same profiles
+  for (const name of [
+    "Local State",
+    "First Run",
+    "Last Version",
+    "Variations",
+    "Secure Preferences",
+  ]) {
     const from = path.join(sourceRoot, name);
     const to = path.join(cloneRoot, name);
     if (fs.existsSync(from)) {
@@ -261,6 +276,19 @@ export async function ensureJobbotChromeProfile(opts: {
   }
 
   scrubSingletonFiles(cloneRoot);
+
+  // Never continue with an empty clone — abort hard
+  try {
+    assertChromeSessionArtifacts(cloneRoot, profile);
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    throw new Error(
+      detail.includes("Cookies")
+        ? detail
+        : `סנכרון העותק נכשל — אין Cookies בפרופיל. ${detail}`,
+    );
+  }
+
   log(`סנכרון הושלם → ${cloneRoot} (פרופיל: ${profile})`);
 
   return {
@@ -270,8 +298,8 @@ export async function ensureJobbotChromeProfile(opts: {
     chromeWasRunning,
     sourcePath: sourceRoot,
     messageHe: chromeWasRunning
-      ? "סנכרון הצליח גם עם Chrome פתוח. מעתה Jobbot רץ על עותק נפרד."
-      : "סנכרון פרופיל הושלם. מעתה אפשר להשאיר את Chrome פתוח בזמן ריצות Jobbot.",
+      ? "סנכרון הצליח גם עם Chrome פתוח. מעתה Jobbot רץ על עותק נפרד עם Cookies."
+      : "סנכרון פרופיל הושלם (כולל Cookies/Login Data). אפשר להשאיר Chrome פתוח בריצות הבאות.",
   };
 }
 

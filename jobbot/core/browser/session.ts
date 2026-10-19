@@ -1,6 +1,7 @@
-import { chromium, type BrowserContext, type Page } from "playwright";
+import type { BrowserContext, Page } from "playwright";
 import type { SiteAdapterContext } from "../types";
 import { chromeLaunchErrorHe, isChromeLockError } from "./chrome-lock";
+import { launchChromePersistent, resolveLaunchUserDataDir } from "./launch-chrome";
 
 export async function withBrowserPage<T>(
   ctx: SiteAdapterContext,
@@ -10,23 +11,21 @@ export async function withBrowserPage<T>(
     throw new Error("DEMO_MODE_NO_BROWSER");
   }
 
-  // Prefer Jobbot clone so Matan's live Chrome can stay open
-  const profileDir = ctx.jobbotChromeProfileDir || ctx.chromeUserDataDir;
+  // Live mode (default): real chromeUserDataDir. Clone only when jobbotChromeProfileDir is set.
+  const profileDir = resolveLaunchUserDataDir({
+    chromeUserDataDir: ctx.chromeUserDataDir,
+    jobbotChromeProfileDir: ctx.jobbotChromeProfileDir,
+    useChromeClone: Boolean(ctx.jobbotChromeProfileDir),
+  });
   if (!profileDir) {
     throw new Error("לא הוגדר נתיב Chrome");
   }
 
-  const launchOptions = {
-    headless: false,
-    channel: "chrome" as const,
-    args: ["--disable-blink-features=AutomationControlled"],
-  };
-
   let context: BrowserContext;
   try {
-    context = await chromium.launchPersistentContext(profileDir, {
-      ...launchOptions,
-      viewport: { width: 1280, height: 900 },
+    context = await launchChromePersistent({
+      userDataDir: profileDir,
+      profileDirectory: ctx.chromeProfileDirectory,
     });
   } catch (err) {
     throw new Error(chromeLaunchErrorHe(err));

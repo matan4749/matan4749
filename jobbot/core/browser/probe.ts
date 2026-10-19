@@ -1,9 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { chromium } from "playwright";
 import {
-  CHROME_CLONE_HINT_HE,
   CHROME_QUIT_MSG_HE,
   chromeLaunchErrorHe,
   isChromeLockError,
@@ -12,11 +10,14 @@ import {
 import {
   CHROME_EPERM_MSG_HE,
   defaultMacChromeUserDataDir,
+  detectChromeProfileName,
   isChromeEpermError,
   normalizeChromeUserDataDir,
-  resolveChromeUserDataDir,
 } from "./chrome-paths";
+import { launchChromePersistent } from "./launch-chrome";
 import { ensureJobbotChromeProfile, jobbotCloneRoot } from "./profile-clone";
+import { assertChromeSessionArtifacts } from "./session-artifacts";
+import { LINKEDIN_NOT_LOGGED_IN_HE } from "./session-gate";
 
 export { resolveChromeUserDataDir, normalizeChromeUserDataDir } from "./chrome-paths";
 
@@ -24,7 +25,8 @@ export interface ChromeProbeResult {
   ok: boolean;
   pathExists: boolean;
   pathUsed: string;
-  clonePath?: string;
+  launchPath?: string;
+  mode: "live" | "clone";
   linkedInLoggedIn: boolean | null;
   indeedReachable: boolean | null;
   chromeWasRunning?: boolean;
@@ -37,18 +39,21 @@ export function defaultMacChromeHint(): string {
 }
 
 /**
- * Smoke-test via Jobbot profile clone (so live Chrome can stay open after first sync).
+ * Smoke-test Chrome session.
+ * Default = live user-data-dir. Clone only when useClone / forceSync.
  */
 export async function probeChromeProfile(
   chromeUserDataDir: string,
-  opts?: { dataDir?: string; forceSync?: boolean },
+  opts?: { dataDir?: string; forceSync?: boolean; useClone?: boolean },
 ): Promise<ChromeProbeResult> {
   const pathUsed = normalizeChromeUserDataDir(chromeUserDataDir);
+  const useClone = Boolean(opts?.useClone || opts?.forceSync);
   if (!pathUsed) {
     return {
       ok: false,
       pathExists: false,
       pathUsed: "",
+      mode: useClone ? "clone" : "live",
       linkedInLoggedIn: null,
       indeedReachable: null,
       messageHe: "לא הוגדר נתיב Chrome. בחר תיקיית Google/Chrome בהגדרות (בלי /Default).",
@@ -64,6 +69,7 @@ export async function probeChromeProfile(
         ok: false,
         pathExists: false,
         pathUsed,
+        mode: useClone ? "clone" : "live",
         linkedInLoggedIn: null,
         indeedReachable: null,
         messageHe: CHROME_EPERM_MSG_HE,
@@ -75,6 +81,7 @@ export async function probeChromeProfile(
       ok: false,
       pathExists: false,
       pathUsed,
+      mode: useClone ? "clone" : "live",
       linkedInLoggedIn: null,
       indeedReachable: null,
       messageHe: `הנתיב לא קיים: ${pathUsed}\nהשתמש ב־…/Google/Chrome (לא …/Chrome/Default).`,
@@ -84,39 +91,72 @@ export async function probeChromeProfile(
   const dataDir = opts?.dataDir || path.join(os.tmpdir(), "jobbot-probe-data");
   fs.mkdirSync(dataDir, { recursive: true });
 
-  let clonePath = "";
-  let chromeWasRunning = false;
-  try {
-    const clone = await ensureJobbotChromeProfile({
-      sourceUserDataDir: pathUsed,
-      cloneRoot: jobbotCloneRoot(dataDir),
-      force: opts?.forceSync,
-    });
-    clonePath = clone.path;
-    chromeWasRunning = clone.chromeWasRunning;
-  } catch (err) {
-    const detail = err instanceof Error ? err.message : String(err);
-    const alreadyHe =
-      /Cmd\+Q|Full Disk Access|גישה מלאה לדיסק|אין הרשאה לקרוא|סנכרון/i.test(detail);
-    return {
-      ok: false,
-      pathExists: true,
-      pathUsed,
-      linkedInLoggedIn: null,
-      indeedReachable: null,
-      chromeWasRunning: await isChromeRunning(),
-      messageHe:
-        alreadyHe || isChromeLockError(err) ? detail : chromeLaunchErrorHe(err),
-      detail,
-    };
+  let launchPath = pathUsed;
+  let chromeWasRunning = await isChromeRunning();
+  const profile = detectChromeProfileName(pathUsed);
+
+  if (useClone) {
+    try {
+      const clone = await ensureJobbotChromeProfile({
+        sourceUserDataDir: pathUsed,
+        cloneRoot: jobbotCloneRoot(dataDir),
+        force: opts?.forceSync,
+      });
+      launchPath = clone.path;
+      chromeWasRunning = clone.chromeWasRunning;
+      assertChromeSessionArtifacts(launchPath, profile);
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      const alreadyHe =
+        /Cmd\+Q|Full Disk Access|גישה מלאה לדיסק|אין הרשאה לקרוא|סנכרון|Cookies/i.test(detail);
+      return {
+        ok: false,
+        pathExists: true,
+        pathUsed,
+        mode: "clone",
+        linkedInLoggedIn: null,
+        indeedReachable: null,
+        chromeWasRunning: await isChromeRunning(),
+        messageHe: alreadyHe || isChromeLockError(err) ? detail : chromeLaunchErrorHe(err),
+        detail,
+      };
+    }
+  } else {
+    try {
+      assertChromeSessionArtifacts(pathUsed, profile);
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      return {
+        ok: false,
+        pathExists: true,
+        pathUsed,
+        mode: "live",
+        linkedInLoggedIn: null,
+        indeedReachable: null,
+        chromeWasRunning,
+        messageHe: detail,
+        detail,
+      };
+    }
+    if (chromeWasRunning) {
+      return {
+        ok: false,
+        pathExists: true,
+        pathUsed,
+        mode: "live",
+        linkedInLoggedIn: null,
+        indeedReachable: null,
+        chromeWasRunning: true,
+        messageHe: CHROME_QUIT_MSG_HE,
+      };
+    }
   }
 
   let context;
   try {
-    context = await chromium.launchPersistentContext(clonePath, {
-      headless: false,
-      channel: "chrome",
-      args: ["--disable-blink-features=AutomationControlled"],
+    context = await launchChromePersistent({
+      userDataDir: launchPath,
+      profileDirectory: profile,
       viewport: { width: 1100, height: 800 },
     });
     const page = context.pages()[0] ?? (await context.newPage());
@@ -157,11 +197,14 @@ export async function probeChromeProfile(
         ok: true,
         pathExists: true,
         pathUsed,
-        clonePath,
+        launchPath,
+        mode: useClone ? "clone" : "live",
         linkedInLoggedIn: true,
         indeedReachable,
         chromeWasRunning,
-        messageHe: `מחובר ללינקדאין דרך עותק Jobbot. ${CHROME_CLONE_HINT_HE}`,
+        messageHe: useClone
+          ? "מחובר ללינקדאין דרך עותק Jobbot."
+          : "מחובר ללינקדאין בפרופיל Chrome החי שלך.",
       };
     }
 
@@ -169,12 +212,12 @@ export async function probeChromeProfile(
       ok: false,
       pathExists: true,
       pathUsed,
-      clonePath,
+      launchPath,
+      mode: useClone ? "clone" : "live",
       linkedInLoggedIn: false,
       indeedReachable,
       chromeWasRunning,
-      messageHe:
-        "העותק נפתח, אך לינקדאין לא מחובר. התחבר ב-Chrome הרגיל, לחץ «רענון עותק פרופיל» (אם צריך — Cmd+Q פעם אחת), ובדוק שוב.",
+      messageHe: LINKEDIN_NOT_LOGGED_IN_HE,
       detail: `url=${url}`,
     };
   } catch (err) {
@@ -184,7 +227,8 @@ export async function probeChromeProfile(
       ok: false,
       pathExists: true,
       pathUsed,
-      clonePath,
+      launchPath,
+      mode: useClone ? "clone" : "live",
       linkedInLoggedIn: null,
       indeedReachable: null,
       chromeWasRunning,

@@ -25,8 +25,12 @@ describe("chrome profile clone", () => {
     fs.writeFileSync(path.join(source, "SingletonLock"), "LOCK");
     fs.writeFileSync(path.join(source, "SingletonCookie"), "COOKIE");
     fs.writeFileSync(path.join(source, "SingletonSocket"), "SOCK");
-    fs.writeFileSync(path.join(source, "Default", "Cookies"), "cookies-db");
+    fs.writeFileSync(
+      path.join(source, "Default", "Cookies"),
+      Buffer.alloc(128, 1), // session gate requires cookies ≥ 64 bytes
+    );
     fs.writeFileSync(path.join(source, "Default", "Preferences"), "{}");
+    fs.writeFileSync(path.join(source, "Default", "Login Data"), Buffer.alloc(64, 2));
     fs.writeFileSync(path.join(source, "Default", "Cache", "big"), "heavy");
 
     const result = await ensureJobbotChromeProfile({
@@ -60,8 +64,9 @@ describe("chrome profile clone", () => {
     const cloneRoot = path.join(tmp, "chrome-clone");
     fs.mkdirSync(path.join(source, "Default"), { recursive: true });
     fs.writeFileSync(path.join(source, "Local State"), "{}");
-    fs.writeFileSync(path.join(source, "Default", "Cookies"), "cookies-db");
+    fs.writeFileSync(path.join(source, "Default", "Cookies"), Buffer.alloc(128, 1));
     fs.writeFileSync(path.join(source, "Default", "Preferences"), "{}");
+    fs.writeFileSync(path.join(source, "Default", "Login Data"), Buffer.alloc(64, 2));
 
     const { root, profile } = normalizeSource(path.join(source, "Default"));
     assert.equal(root, source);

@@ -29,12 +29,15 @@ function normalize(
   const reportEmail =
     (rest.reportEmail && rest.reportEmail.trim()) || base.reportEmail;
   const chromeRaw = (rest.chromeUserDataDir ?? base.chromeUserDataDir) || "";
+  const useChromeClone =
+    typeof rest.useChromeClone === "boolean" ? rest.useChromeClone : base.useChromeClone;
   return {
     ...base,
     ...rest,
     cvPath,
     reportEmail,
     chromeUserDataDir: chromeRaw ? normalizeChromeUserDataDir(chromeRaw) : "",
+    useChromeClone,
     enabledSites:
       rest.enabledSites && rest.enabledSites.length
         ? sanitizeSites(rest.enabledSites)
@@ -74,6 +77,7 @@ export function saveSettings(dataDir: string, settings: AppSettings): void {
     chromeUserDataDir: settings.chromeUserDataDir
       ? normalizeChromeUserDataDir(settings.chromeUserDataDir)
       : "",
+    useChromeClone: Boolean(settings.useChromeClone),
     reportEmail: settings.reportEmail,
     keywords: settings.keywords,
     location: settings.location,

@@ -44,10 +44,15 @@ export interface SiteSearchParams {
 
 export interface SiteAdapterContext {
   demo: boolean;
-  /** Source Chrome user-data-dir (Matan's real profile) */
+  /** Source Chrome user-data-dir (Matan's real profile) — used in live mode */
   chromeUserDataDir?: string;
-  /** Jobbot-owned clone used for launchPersistentContext (avoids SingletonLock) */
+  /**
+   * Only set when useChromeClone is on. Live mode leaves this undefined so
+   * Playwright opens the real user-data-dir (never a blank profile).
+   */
   jobbotChromeProfileDir?: string;
+  /** Chrome --profile-directory (usually Default) */
+  chromeProfileDirectory?: string;
   cvPath?: string;
   timeoutMs: number;
   knowledge: SiteKnowledge;
@@ -118,6 +123,12 @@ export interface RunConfig {
 export interface AppSettings {
   cvPath: string;
   chromeUserDataDir: string;
+  /**
+   * When false (default): launchPersistentContext against the live Chrome
+   * user-data-dir. Chrome must be fully quit (Cmd+Q).
+   * When true: sync a Jobbot clone and launch against the clone (Chrome may stay open).
+   */
+  useChromeClone: boolean;
   /** Destination only — SMTP is app-owned, never configured by the user */
   reportEmail: string;
   keywords: string[];
@@ -137,6 +148,7 @@ export const EXCLUDED_SITES = ["gotfriends", "easy"] as const;
 export const DEFAULT_SETTINGS: AppSettings = {
   cvPath: "",
   chromeUserDataDir: "",
+  useChromeClone: false,
   reportEmail: "matan4749@gmail.com",
   keywords: [
     "Full Stack Developer",

@@ -199,8 +199,22 @@ export default function App() {
       const result = await api.startRun({ settings: activeSettings, config });
       setProgress(result.progress);
       setReportHtml(result.reportHtml);
-      if (result.progress.phase === "error" || result.email.error === "CHROME_PROFILE_REQUIRED") {
-        const msg = "הריצה נעצרה — חסר נתיב Chrome מחובר";
+      if (result.email.error === "LINKEDIN_NOT_LOGGED_IN" || result.email.error === "CHROME_SESSION_EMPTY") {
+        const msg =
+          result.progress.logs.filter((l) => l.level === "error").at(-1)?.message ||
+          "לא מחובר בלינקדאין בפרופיל הזה — Cmd+Q, נתיב …/Google/Chrome, Full Disk Access";
+        setStatusMsg(msg);
+        setTab("settings");
+        return { ok: false, messageHe: msg };
+      }
+      if (
+        result.progress.phase === "error" ||
+        result.email.error === "CHROME_PROFILE_REQUIRED" ||
+        result.email.error === "CHROME_STILL_OPEN"
+      ) {
+        const msg =
+          result.progress.logs.filter((l) => l.level === "error").at(-1)?.message ||
+          "הריצה נעצרה — בדוק Chrome (Cmd+Q / נתיב / Full Disk Access)";
         setStatusMsg(msg);
         setTab("settings");
         return { ok: false, messageHe: msg };
@@ -266,14 +280,20 @@ export default function App() {
       setChromeProbeMsg("קודם בחר/הזן נתיב Chrome");
       return;
     }
+    const useClone = Boolean(settings.useChromeClone) || forceSync;
     setProbing(true);
     setChromeProbeMsg(
       forceSync
         ? "מרענן עותק פרופיל… אם נכשל — סגור Chrome עם Cmd+Q"
-        : "בודק דרך עותק Jobbot (Chrome הרגיל יכול להישאר פתוח אחרי סנכרון)…",
+        : useClone
+          ? "בודק דרך עותק Jobbot…"
+          : "בודק פרופיל Chrome החי (חובה Cmd+Q)…",
     );
     try {
-      const r = await api.probeChrome(settings.chromeUserDataDir, { forceSync });
+      const r = await api.probeChrome(settings.chromeUserDataDir, {
+        forceSync,
+        useClone,
+      });
       setChromeProbeMsg(r.messageHe);
     } catch (err) {
       setChromeProbeMsg(err instanceof Error ? err.message : String(err));
@@ -549,24 +569,27 @@ export default function App() {
                   </h3>
                   <ol className="hint" style={{ margin: 0, paddingInlineStart: 18, lineHeight: 1.7 }}>
                     <li>
-                      בחר תיקיית <strong>Google/Chrome</strong> (לא את תיקיית Default שבתוכה) —
-                      ב־Mac:
+                      <strong>Jobbot יפתח את Chrome שלך עם הפרופיל המחובר</strong> — חובה{" "}
+                      <strong>Cmd+Q</strong> לפני ריצה (לא רק לסגור חלון).
+                    </li>
+                    <li>
+                      נתיב: תיקיית <strong>Google/Chrome</strong> (בלי /Default) —
                       <br />
-                      <code>{chromeHint || "/Users/matan_amar/Library/Application Support/Google/Chrome"}</code>
-                    </li>
-                    <li>התחבר ל־LinkedIn ו־Indeed ב-Chrome הרגיל שלך.</li>
-                    <li>
-                      Jobbot מעתיק את הפרופיל לתיקייה נפרדת (בלי SingletonLock) — אחרי סנכרון
-                      מוצלח אפשר להשאיר את Chrome פתוח.
+                      <code>
+                        {chromeHint ||
+                          "/Users/matan_amar/Library/Application Support/Google/Chrome"}
+                      </code>
                     </li>
                     <li>
-                      אם מופיע <strong>EPERM / operation not permitted</strong>: הגדרות מערכת →
-                      פרטיות ואבטחה → Full Disk Access → הפעל את Jobbot → הפעל מחדש את Jobbot.
-                      גם סגור Chrome עם <strong>Cmd+Q</strong>.
+                      התחבר ל־LinkedIn ו־Indeed ב-Chrome הרגיל שלך לפני הריצה הראשונה.
                     </li>
                     <li>
-                      אם מופיעה שגיאת נעילה / «פתיחה בסשן קיים»: סגור לגמרי עם{" "}
-                      <strong>Cmd+Q</strong>, ודא שאין נקודה ב־Dock, ואז «רענון עותק פרופיל».
+                      אם מופיע EPERM: הגדרות מערכת → פרטיות ואבטחה → Full Disk Access → הפעל
+                      Jobbot → הפעל מחדש.
+                    </li>
+                    <li>
+                      אם נפתח מסך התחברות ריק ללינקדאין — Jobbot עוצר. אל תמשיך להגיש; תקן נתיב /
+                      Cmd+Q / Full Disk Access.
                     </li>
                   </ol>
                 </div>
@@ -589,8 +612,21 @@ export default function App() {
                     </button>
                   </div>
                   <p className="hint">
-                    הנתיב חייב להסתיים ב־Google/Chrome — אם בחרת Default, Jobbot מתקן אוטומטית
-                    לתיקיית האב.
+                    ברירת מחדל: פרופיל חי. הנתיב חייב להסתיים ב־Google/Chrome (בלי /Default).
+                  </p>
+                  <label className="row" style={{ marginTop: 10, gap: 8, alignItems: "center" }}>
+                    <input
+                      type="checkbox"
+                      checked={Boolean(settings.useChromeClone)}
+                      onChange={(e) =>
+                        setSettings({ ...settings, useChromeClone: e.target.checked })
+                      }
+                    />
+                    <span>השתמש בעותק / אפשר Chrome פתוח</span>
+                  </label>
+                  <p className="hint">
+                    כבוי (מומלץ): פרופיל חי אחרי Cmd+Q. דלוק: סנכרון עותק עם Cookies — אם העותק
+                    ריק, Jobbot עוצר ולא ממשיך עם פרופיל ריק.
                   </p>
                   <div className="cta-row" style={{ marginTop: 8 }}>
                     <button type="button" className="btn" onClick={() => void useChromeHint()}>
@@ -612,14 +648,16 @@ export default function App() {
                     >
                       {probing ? "בודק…" : "בדיקת חיבור Chrome"}
                     </button>
-                    <button
-                      type="button"
-                      className="btn"
-                      disabled={probing || !settings.chromeUserDataDir.trim()}
-                      onClick={() => void probeChrome(true)}
-                    >
-                      רענון עותק פרופיל
-                    </button>
+                    {settings.useChromeClone && (
+                      <button
+                        type="button"
+                        className="btn"
+                        disabled={probing || !settings.chromeUserDataDir.trim()}
+                        onClick={() => void probeChrome(true)}
+                      >
+                        רענון עותק פרופיל
+                      </button>
+                    )}
                   </div>
                   {chromeClosedMsg && (
                     <p
@@ -630,10 +668,6 @@ export default function App() {
                     </p>
                   )}
                   {chromeProbeMsg && <p className="hint">{chromeProbeMsg}</p>}
-                  <p className="hint">
-                    לפני התחלה: «וודא ש־Chrome סגור» (או שההתחלה תבדוק אוטומטית). Jobbot לא מבקש
-                    סיסמאות — מעתיק סשן לעותק פרטי.
-                  </p>
                 </div>
 
                 <div className="field">

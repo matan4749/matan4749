@@ -5,9 +5,14 @@ import { LearningEngine } from "../learning/engine";
 import { buildReportHtml } from "../email/report";
 import { sendReportEmail } from "../email/send";
 import { analyzeCv } from "../cv/analyze";
-import { CHROME_QUIT_MSG_HE, isChromeLockError } from "../browser/chrome-lock";
-import { normalizeChromeUserDataDir } from "../browser/chrome-paths";
+import { checkChromeClosed, CHROME_QUIT_MSG_HE, isChromeLockError } from "../browser/chrome-lock";
+import {
+  detectChromeProfileName,
+  normalizeChromeUserDataDir,
+} from "../browser/chrome-paths";
 import { ensureJobbotChromeProfile, jobbotCloneRoot } from "../browser/profile-clone";
+import { assertChromeSessionArtifacts } from "../browser/session-artifacts";
+import { verifyLinkedInSession } from "../browser/session-gate";
 import type {
   AppSettings,
   ApplyResult,
@@ -100,25 +105,96 @@ export class JobRunner {
     this.log("info", `מצב חיפוש: ${config.searchMode === "cv" ? "מקו״ח" : "מילות מפתח"} · ${keywords.join(", ")}`);
 
     let jobbotChromeProfileDir: string | undefined;
+    let chromeProfileDirectory = "Default";
+    const useClone = Boolean(settings.useChromeClone);
+
     if (this.demo) {
       this.log("warn", "מצב הדגמה פעיל — לא יוגשו מועמדויות אמיתיות");
     } else {
       this.log("info", `מקור Chrome: ${chromePath}`);
-      try {
-        const clone = await ensureJobbotChromeProfile({
-          sourceUserDataDir: chromePath,
-          cloneRoot: jobbotCloneRoot(this.dataDir),
-          log: (m) => this.log("info", m),
-        });
-        jobbotChromeProfileDir = clone.path;
-        this.log("info", clone.messageHe);
+      chromeProfileDirectory = detectChromeProfileName(chromePath);
+
+      // Live mode (default): Chrome must be fully quit; launch against real user-data-dir
+      if (!useClone) {
         this.log(
           "info",
-          "Jobbot מפעיל Chrome על עותק נפרד (בלי SingletonLock) — אחרי סנכרון מוצלח אפשר להשאיר את Chrome הרגיל פתוח",
+          "מצב פרופיל חי — Jobbot יפתח את Chrome שלך עם הפרופיל המחובר (חובה Cmd+Q לפני ריצה)",
         );
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        this.log("error", isChromeLockError(err) ? CHROME_QUIT_MSG_HE : msg);
+        const closed = await checkChromeClosed(chromePath);
+        if (!closed.ok) {
+          this.log("error", closed.messageHe);
+          this.log("error", CHROME_QUIT_MSG_HE);
+          this.patch({ phase: "error", finishedAt: new Date().toISOString() });
+          const reportHtml = buildReportHtml({
+            userName: "מתן עמר",
+            progress: this.progress,
+            results: [],
+          });
+          return {
+            progress: this.getProgress(),
+            reportHtml,
+            email: { ok: false, previewOnly: true, error: "CHROME_STILL_OPEN" },
+            learningNotes: [closed.messageHe],
+          };
+        }
+        try {
+          assertChromeSessionArtifacts(chromePath, chromeProfileDirectory);
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          this.log("error", msg);
+          this.patch({ phase: "error", finishedAt: new Date().toISOString() });
+          const reportHtml = buildReportHtml({
+            userName: "מתן עמר",
+            progress: this.progress,
+            results: [],
+          });
+          return {
+            progress: this.getProgress(),
+            reportHtml,
+            email: { ok: false, previewOnly: true, error: "CHROME_SESSION_EMPTY" },
+            learningNotes: [msg],
+          };
+        }
+        jobbotChromeProfileDir = undefined;
+        this.log("info", `פרופיל חי מוכן (${chromeProfileDirectory}) — ללא עותק`);
+      } else {
+        this.log("info", "מצב עותק פרופיל — מסנכרן ואז מפעיל על עותק Jobbot");
+        try {
+          const clone = await ensureJobbotChromeProfile({
+            sourceUserDataDir: chromePath,
+            cloneRoot: jobbotCloneRoot(this.dataDir),
+            log: (m) => this.log("info", m),
+          });
+          assertChromeSessionArtifacts(clone.path, chromeProfileDirectory);
+          jobbotChromeProfileDir = clone.path;
+          this.log("info", clone.messageHe);
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          this.log("error", isChromeLockError(err) ? CHROME_QUIT_MSG_HE : msg);
+          this.patch({ phase: "error", finishedAt: new Date().toISOString() });
+          const reportHtml = buildReportHtml({
+            userName: "מתן עמר",
+            progress: this.progress,
+            results: [],
+          });
+          return {
+            progress: this.getProgress(),
+            reportHtml,
+            email: { ok: false, previewOnly: true, error: "CHROME_PROFILE_SYNC_FAILED" },
+            learningNotes: [msg],
+          };
+        }
+      }
+
+      // Session gate: LinkedIn login wall → abort (never continue with empty session)
+      const launchDir = jobbotChromeProfileDir || chromePath;
+      const gate = await verifyLinkedInSession({
+        userDataDir: launchDir,
+        profileDirectory: chromeProfileDirectory,
+        log: (m) => this.log("info", m),
+      });
+      if (!gate.ok) {
+        this.log("error", gate.messageHe);
         this.patch({ phase: "error", finishedAt: new Date().toISOString() });
         const reportHtml = buildReportHtml({
           userName: "מתן עמר",
@@ -128,10 +204,11 @@ export class JobRunner {
         return {
           progress: this.getProgress(),
           reportHtml,
-          email: { ok: false, previewOnly: true, error: "CHROME_PROFILE_SYNC_FAILED" },
-          learningNotes: [msg],
+          email: { ok: false, previewOnly: true, error: "LINKEDIN_NOT_LOGGED_IN" },
+          learningNotes: [gate.messageHe],
         };
       }
+      this.log("info", gate.messageHe);
     }
 
     const enabled = config.enabledSites.length
@@ -155,7 +232,9 @@ export class JobRunner {
       const ctx: SiteAdapterContext = {
         demo: this.demo,
         chromeUserDataDir: chromePath || undefined,
-        jobbotChromeProfileDir,
+        // Only set in clone mode — live mode must open the real path
+        jobbotChromeProfileDir: useClone ? jobbotChromeProfileDir : undefined,
+        chromeProfileDirectory,
         cvPath: settings.cvPath || undefined,
         timeoutMs: config.perJobTimeoutMs,
         knowledge,

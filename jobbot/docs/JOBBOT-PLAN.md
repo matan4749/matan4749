@@ -1,24 +1,21 @@
-# Jobbot — תוכנית מוצר (מעודכן)
+# Jobbot — תוכנית הפצה והרצה
 
-## ברירת מחדל: פרופיל Jobbot + שער התחברות
+## הפצה ראשית (Mac של מתן)
 
-1. **פרופיל קבוע** תחת `jobbot-data/browser-profile/` — לא נמחק בין ריצות.
-2. **בתחילת כל ריצה:** נפתח Chrome עם הפרופיל הזה → מתן מתחבר ידנית לאתרים (LinkedIn, Indeed, …).
-3. **UI:** מודאל «התחבר לאתרים בחלון Chrome שנפתח. כשסיימת — לחץ המשך» עם **המשך לריצה** / **ביטול**.
-4. אחרי «המשך» — חיפוש והגשה ב**אותו** חלון Chrome (אותו context).
-5. Chrome הרגיל של המערכת יכול להישאר פתוח.
+**קובץ אחד:** `הפעל-Jobbot.command`
 
-## לא ברירת מחדל
+1. קליק ימני → פתח  
+2. הסקריפט: `git pull` לענף `cursor/jobbot-desktop-app-4bd4` → `~/Desktop/Jobbot-src`  
+3. `cd jobbot && npm install && npm run build && npm start`  
+4. אחרי כל עדכון סוכן — אותה לחיצה שוב  
 
-- העתקת Cookies מ־`~/Library/.../Google/Chrome` (שביר / EPERM / פרופיל ריק).
-- `launchPersistentContext` על פרופיל המערכת (timeout / SingletonLock).
+אין Join · אין `tar.gz.part` · אין Linux `.app` כנתיב ראשי.
 
-## מצב מתקדם (הגדרות)
+## מוצר — ריצה
 
-- **Chrome מערכת** — נתיב `…/Google/Chrome`, חובה Cmd+Q.
-- אופציונלי: עותק clone.
+- ברירת מחדל: פרופיל Jobbot קבוע (`jobbot-data/browser-profile/`) + שער התחברות ידני  
+- «המשך לריצה» → חיפוש/הגשה באותו Chrome  
 
-## טכני
+## Deprecated
 
-- הפעלה: spawn Chrome + `connectOverCDP` (ללא `--no-sandbox` / ללא mock-keychain).
-- `sharedBrowser` ב־`SiteAdapterContext` — adapters לא סוגרים את הדפדפן.
+- Linux-cross-built `Jobbot.app` / split tar.gz / Join tools — לא אמין בלי חתימה על Mac  

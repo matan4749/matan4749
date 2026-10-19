@@ -6,6 +6,21 @@
 
 ---
 
+## Join (חובה להוריד מחדש!)
+
+ה־Join הישן חיפש `.zip.part` — **הורד שוב** `Join-Jobbot-Mac.app.zip`.
+הגרסה החדשה מחפשת קודם:
+`Jobbot-0.1.0-mac-arm64.tar.gz.part00|01|02`
+ואז מחלצת `Jobbot.app` אוטומטית.
+
+Terminal אם Join נכשל:
+```bash
+cd ~/Desktop/Jobbot
+cat Jobbot-0.1.0-mac-arm64.tar.gz.part00 Jobbot-0.1.0-mac-arm64.tar.gz.part01 Jobbot-0.1.0-mac-arm64.tar.gz.part02 > Jobbot-mac.tar.gz
+tar -tzf Jobbot-mac.tar.gz && tar -xzf Jobbot-mac.tar.gz && open -R Jobbot.app
+```
+
+
 ## מה להוריד (ביילד tar.gz — לא zip!)
 
 1. `Jobbot-0.1.0-mac-arm64.tar.gz.part00`

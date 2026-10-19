@@ -49,3 +49,6 @@ tar -tzf Jobbot-mac.tar.gz && tar -xzf Jobbot-mac.tar.gz
 
 Archive Utility ב-Mac נכשל על zip של Electron (Error 94) גם כש-`unzip -t` עובר.
 לכן העברנו ל-`.tar.gz` + Join שמחלץ לבד.
+
+## צ׳אט
+טאב «צ׳אט» באפליקציה — תכנון ריצה בעברית. בלי מפתח LLM עובד בכללים מקומיים; עם `JOBBOT_LLM_API_KEY` משתמש ב-API.

@@ -75,6 +75,9 @@ export function saveSettings(dataDir: string, settings: AppSettings): void {
     enabledSites: settings.enabledSites,
     jobLimitPerSite: settings.jobLimitPerSite,
     sendEmailAfterRun: settings.sendEmailAfterRun,
+    llmApiKey: settings.llmApiKey || "",
+    llmBaseUrl: settings.llmBaseUrl || "",
+    llmModel: settings.llmModel || "",
   };
   fs.writeFileSync(settingsPath(dataDir), JSON.stringify(clean, null, 2), "utf8");
 }

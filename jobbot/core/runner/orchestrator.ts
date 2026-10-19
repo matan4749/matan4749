@@ -185,6 +185,25 @@ export class JobRunner {
       this.patch({ found: this.progress.found + jobs.length });
       this.log("info", `נמצאו ${jobs.length} משרות ב-${adapter.displayNameHe}`);
 
+      if (config.searchOnly) {
+        for (const job of jobs) {
+          const result: ApplyResult = {
+            job,
+            status: "skipped",
+            method: adapter.defaultApplyMethod,
+            reason: "חיפוש בלבד — לא הוגשה מועמדות",
+            durationMs: 0,
+            confirmed: false,
+            simulated: false,
+          };
+          allResults.push(result);
+          this.progress.results = [...allResults];
+          this.patch({ skipped: this.progress.skipped + 1 });
+          this.log("info", `○ נמצא (חיפוש בלבד): ${job.title}`);
+        }
+        continue;
+      }
+
       this.patch({ phase: "applying" });
 
       for (const job of jobs) {

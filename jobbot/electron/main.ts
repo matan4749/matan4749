@@ -13,6 +13,10 @@ import {
   resolveChromeUserDataDir,
 } from "../core/browser/probe";
 import { checkChromeClosed } from "../core/browser/chrome-lock";
+import { resolveAssistantTurn, llmConfigured } from "../core/chat/llm";
+import { loadChatState, saveChatState } from "../core/chat/store";
+import type { ChatMessage, RunPlan } from "../core/chat/types";
+import { randomUUID } from "node:crypto";
 import type { AppSettings, RunConfig } from "../core/types";
 
 let mainWindow: BrowserWindow | null = null;
@@ -207,6 +211,85 @@ function registerIpc(): void {
   ipcMain.handle("app:dataDir", () => dataDir());
 
   ipcMain.handle("app:isPackaged", () => app.isPackaged);
+
+  ipcMain.handle("chat:get", () => {
+    const state = loadChatState(dataDir());
+    const settings = loadSettings(dataDir(), appRoot());
+    const backend = llmConfigured({
+      apiKey: settings.llmApiKey,
+      baseUrl: settings.llmBaseUrl,
+      model: settings.llmModel,
+    })
+      ? "llm"
+      : "rules";
+    return { ...state, activeBackend: backend };
+  });
+
+  ipcMain.handle("chat:clear", () => {
+    return saveChatState(dataDir(), { messages: [], lastPlan: null });
+  });
+
+  ipcMain.handle("chat:send", async (_e, userText: string) => {
+    const settings = loadSettings(dataDir(), appRoot());
+    const state = loadChatState(dataDir());
+    const userMsg: ChatMessage = {
+      id: randomUUID(),
+      role: "user",
+      content: userText,
+      ts: new Date().toISOString(),
+    };
+    const history = state.messages
+      .filter((m) => m.role === "user" || m.role === "assistant")
+      .map((m) => ({ role: m.role as "user" | "assistant", content: m.content }));
+
+    const turn = await resolveAssistantTurn({
+      userText,
+      history,
+      currentPlan: state.lastPlan,
+      defaultKeywords: settings.keywords,
+      defaultSites: settings.enabledSites,
+      llm: {
+        apiKey: settings.llmApiKey,
+        baseUrl: settings.llmBaseUrl,
+        model: settings.llmModel,
+      },
+    });
+
+    const assistantMsg: ChatMessage = {
+      id: randomUUID(),
+      role: "assistant",
+      content: turn.replyHe,
+      ts: new Date().toISOString(),
+      backend: turn.backend,
+    };
+    const messages = [...state.messages, userMsg, assistantMsg];
+    const saved = saveChatState(dataDir(), { messages, lastPlan: turn.plan });
+    return {
+      ...saved,
+      activeBackend: turn.backend,
+      latestReply: turn.replyHe,
+      plan: turn.plan,
+    };
+  });
+
+  ipcMain.handle("chat:savePlan", (_e, plan: RunPlan) => {
+    const state = loadChatState(dataDir());
+    return saveChatState(dataDir(), { messages: state.messages, lastPlan: plan });
+  });
+
+  ipcMain.handle("chat:backend", () => {
+    const settings = loadSettings(dataDir(), appRoot());
+    return {
+      kind: llmConfigured({
+        apiKey: settings.llmApiKey,
+        baseUrl: settings.llmBaseUrl,
+        model: settings.llmModel,
+      })
+        ? "llm"
+        : "rules",
+      model: settings.llmModel || process.env.JOBBOT_LLM_MODEL || "gpt-4o-mini",
+    };
+  });
 }
 
 app.whenReady().then(() => {

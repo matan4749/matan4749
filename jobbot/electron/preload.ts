@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
 import type { AppSettings, RunConfig, RunProgress } from "../core/types";
+import type { ChatMessage, RunPlan } from "../core/chat/types";
 
 export interface ChromeProbeResult {
   ok: boolean;
@@ -18,6 +19,15 @@ export interface ChromeClosedCheck {
   pathChecked: string;
   messageHe: string;
   checkedAt: string;
+}
+
+export interface ChatStatePayload {
+  messages: ChatMessage[];
+  lastPlan: RunPlan | null;
+  updatedAt?: string;
+  activeBackend: "llm" | "rules";
+  latestReply?: string;
+  plan?: RunPlan;
 }
 
 export interface JobbotApi {
@@ -65,6 +75,11 @@ export interface JobbotApi {
   checkChromeClosed: (chromeUserDataDir?: string) => Promise<ChromeClosedCheck>;
   resolveChromePath: (raw: string) => Promise<string>;
   isPackaged: () => Promise<boolean>;
+  getChat: () => Promise<ChatStatePayload>;
+  sendChat: (text: string) => Promise<ChatStatePayload>;
+  clearChat: () => Promise<ChatStatePayload>;
+  saveChatPlan: (plan: RunPlan) => Promise<ChatStatePayload>;
+  getChatBackend: () => Promise<{ kind: "llm" | "rules"; model: string }>;
   onProgress: (cb: (progress: RunProgress) => void) => () => void;
 }
 
@@ -89,6 +104,11 @@ const api: JobbotApi = {
     ipcRenderer.invoke("chrome:checkClosed", chromeUserDataDir),
   resolveChromePath: (raw) => ipcRenderer.invoke("chrome:resolvePath", raw),
   isPackaged: () => ipcRenderer.invoke("app:isPackaged"),
+  getChat: () => ipcRenderer.invoke("chat:get"),
+  sendChat: (text) => ipcRenderer.invoke("chat:send", text),
+  clearChat: () => ipcRenderer.invoke("chat:clear"),
+  saveChatPlan: (plan) => ipcRenderer.invoke("chat:savePlan", plan),
+  getChatBackend: () => ipcRenderer.invoke("chat:backend"),
   onProgress: (cb) => {
     const handler = (_event: IpcRendererEvent, progress: RunProgress) => cb(progress);
     ipcRenderer.on("run:progress", handler);

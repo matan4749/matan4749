@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import type { AppSettings, RunConfig, RunProgress, SearchMode } from "@core/types";
+import type { RunPlan } from "@core/chat/types";
+import ChatPanel from "./ChatPanel";
 
-type Tab = "home" | "run" | "settings" | "report";
+type Tab = "home" | "run" | "chat" | "settings" | "report";
 
 const idle: RunProgress = {
   phase: "idle",
@@ -115,7 +117,22 @@ export default function App() {
     }
   }
 
-  async function startRun() {
+  function applyPlanToSettings(plan: RunPlan) {
+    if (!settings) return;
+    const next: AppSettings = {
+      ...settings,
+      keywords: plan.keywords.length ? plan.keywords : settings.keywords,
+      enabledSites: plan.enabledSites.length ? plan.enabledSites : settings.enabledSites,
+      location: plan.location || settings.location,
+      jobLimitPerSite: plan.jobLimitPerSite || settings.jobLimitPerSite,
+    };
+    setSearchMode(plan.searchMode);
+    setSelectedKeywords(plan.keywords.length ? plan.keywords : selectedKeywords);
+    void persist(next);
+    setStatusMsg(`תוכנית הוחלה: ${plan.summaryHe}`);
+  }
+
+  async function startRun(fromPlan?: RunPlan) {
     if (!api || !settings || running) return;
     if (!settings.chromeUserDataDir?.trim()) {
       setTab("settings");
@@ -130,26 +147,51 @@ export default function App() {
       setTab("settings");
       return;
     }
+
+    let activeSettings = settings;
+    let mode = searchMode;
+    let kws = selectedKeywords;
+    let searchOnly = false;
+    if (fromPlan) {
+      activeSettings = {
+        ...settings,
+        keywords: fromPlan.keywords.length ? fromPlan.keywords : settings.keywords,
+        enabledSites: fromPlan.enabledSites.length ? fromPlan.enabledSites : settings.enabledSites,
+        location: fromPlan.location || settings.location,
+        jobLimitPerSite: fromPlan.jobLimitPerSite || settings.jobLimitPerSite,
+      };
+      mode = fromPlan.searchMode;
+      kws = fromPlan.keywords;
+      searchOnly = fromPlan.applyMode === "search-only";
+      setSettings(activeSettings);
+      setSearchMode(mode);
+      setSelectedKeywords(kws);
+      await api.saveSettings(activeSettings);
+    }
+
     setRunning(true);
     setTab("run");
     setStatusMsg("");
     const config: RunConfig = {
-      searchMode,
-      keywords: searchMode === "keywords" ? selectedKeywords : [],
-      enabledSites: settings.enabledSites,
-      location: settings.location,
-      jobLimitPerSite: settings.jobLimitPerSite,
+      searchMode: mode,
+      keywords: mode === "keywords" ? kws : [],
+      enabledSites: activeSettings.enabledSites,
+      location: activeSettings.location,
+      jobLimitPerSite: activeSettings.jobLimitPerSite,
       perJobTimeoutMs: 45000,
       perSiteTimeoutMs: 120000,
       maxRetries: 1,
+      searchOnly,
     };
     try {
-      const result = await api.startRun({ settings, config });
+      const result = await api.startRun({ settings: activeSettings, config });
       setProgress(result.progress);
       setReportHtml(result.reportHtml);
       if (result.progress.phase === "error" || result.email.error === "CHROME_PROFILE_REQUIRED") {
         setStatusMsg("הריצה נעצרה — חסר נתיב Chrome מחובר");
         setTab("settings");
+      } else if (config.searchOnly) {
+        setStatusMsg(`חיפוש בלבד — נמצאו ${result.progress.found} (ללא הגשות)`);
       } else if (result.progress.applied === 0) {
         setStatusMsg(
           "לא הוגשו מועמדויות מאומתות — בדוק לוגים (התחברות / Easy Apply / אישור מסך)",
@@ -240,6 +282,7 @@ export default function App() {
             {(
               [
                 ["home", "בית"],
+                ["chat", "צ׳אט"],
                 ["run", "ריצה"],
                 ["settings", "הגדרות"],
                 ["report", "דוח"],
@@ -258,15 +301,26 @@ export default function App() {
         </header>
 
         <main className="view">
+          {tab === "chat" && (
+            <ChatPanel
+              settings={settings}
+              running={running}
+              onApplyPlan={(p) => applyPlanToSettings(p)}
+              onStartFromPlan={(p) => void startRun(p)}
+            />
+          )}
+
           {tab === "home" && (
             <section className="hero">
               <div className="hero-brand rise">Jobbot</div>
               <h1 className="rise-delay">חיפוש והגשת משרות — אוטומטי, מקומי, חכם</h1>
               <p className="rise-delay">
-                שלום מתן. Jobbot סורק לוחות משרות, מגיש קו״ח דרך פרופיל Chrome שלך, לומד
-                מכישלונות, ושולח דוח מייל מפורט בסוף כל ריצה.
+                שלום מתן. דבר עם הצ׳אט בעברית כדי לבחור מה לחפש — או הרץ ישירות.
               </p>
               <div className="cta-row rise-delay">
+                <button type="button" className="btn btn-primary" onClick={() => setTab("chat")}>
+                  פתח צ׳אט
+                </button>
                 <button
                   type="button"
                   className="btn"
@@ -277,7 +331,7 @@ export default function App() {
                 </button>
                 <button
                   type="button"
-                  className="btn btn-primary"
+                  className="btn"
                   onClick={() => void startRun()}
                   disabled={running || checkingClosed}
                 >
@@ -602,6 +656,37 @@ export default function App() {
                   />
                   שלח מייל מובנה בסוף ריצה
                 </label>
+
+                <div className="field">
+                  <label>מפתח LLM לצ׳אט (אופציונלי)</label>
+                  <input
+                    type="password"
+                    value={settings.llmApiKey || ""}
+                    onChange={(e) => setSettings({ ...settings, llmApiKey: e.target.value })}
+                    placeholder="JOBBOT_LLM_API_KEY / sk-…"
+                    autoComplete="off"
+                  />
+                  <p className="hint">
+                    OpenAI-compatible. בלי מפתח — צ׳אט עובד בכללי עברית מקומיים (לא Cursor Composer
+                    בענן).
+                  </p>
+                </div>
+                <div className="field">
+                  <label>LLM base URL</label>
+                  <input
+                    value={settings.llmBaseUrl || "https://api.openai.com/v1"}
+                    onChange={(e) => setSettings({ ...settings, llmBaseUrl: e.target.value })}
+                    placeholder="https://api.openai.com/v1"
+                  />
+                </div>
+                <div className="field">
+                  <label>מודל</label>
+                  <input
+                    value={settings.llmModel || "gpt-4o-mini"}
+                    onChange={(e) => setSettings({ ...settings, llmModel: e.target.value })}
+                    placeholder="gpt-4o-mini"
+                  />
+                </div>
 
                 <button
                   type="button"

@@ -111,6 +111,8 @@ export interface RunConfig {
   perJobTimeoutMs: number;
   perSiteTimeoutMs: number;
   maxRetries: number;
+  /** When true, search only — skip apply adapters */
+  searchOnly?: boolean;
 }
 
 export interface AppSettings {
@@ -123,6 +125,10 @@ export interface AppSettings {
   enabledSites: string[];
   jobLimitPerSite: number;
   sendEmailAfterRun: boolean;
+  /** Optional OpenAI-compatible LLM for in-app chat (also JOBBOT_LLM_API_KEY) */
+  llmApiKey?: string;
+  llmBaseUrl?: string;
+  llmModel?: string;
 }
 
 /** Sites the user explicitly does not use — never register or enable these */
@@ -146,4 +152,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   enabledSites: ["linkedin", "indeed"],
   jobLimitPerSite: 5,
   sendEmailAfterRun: true,
+  llmApiKey: "",
+  llmBaseUrl: "https://api.openai.com/v1",
+  llmModel: "gpt-4o-mini",
 };

@@ -1,6 +1,17 @@
+import { execFile } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
+import { promisify } from "node:util";
 import { isChromeRunning } from "./chrome-lock";
+import {
+  chromeSyncErrorHe,
+  detectChromeProfileName,
+  isChromeEpermError,
+  normalizeChromeUserDataDir,
+} from "./chrome-paths";
+
+const execFileAsync = promisify(execFile);
 
 /** Lock / session files — must never be copied into Jobbot's clone */
 const SKIP_BASENAMES = new Set([
@@ -56,35 +67,27 @@ export function shouldCopyPath(srcPath: string): boolean {
   return true;
 }
 
-function shouldCopy(srcPath: string): boolean {
-  return shouldCopyPath(srcPath);
-}
-
 function cookiesPath(userDataDir: string, profile = "Default"): string {
   return path.join(userDataDir, profile, "Cookies");
 }
 
-function detectProfileName(sourceUserDataDir: string): string {
-  const defaultDir = path.join(sourceUserDataDir, "Default");
-  if (fs.existsSync(defaultDir)) return "Default";
-  // If user pointed at .../Chrome/Default itself, treat parent as user-data and profile Default
-  if (path.basename(sourceUserDataDir) === "Default") return "Default";
-  try {
-    const entries = fs.readdirSync(sourceUserDataDir);
-    const profile = entries.find((e) => /^Profile \d+$/i.test(e));
-    if (profile) return profile;
-  } catch {
-    /* ignore */
+/** Exported for tests */
+export function normalizeSource(sourceUserDataDir: string): { root: string; profile: string } {
+  const root = normalizeChromeUserDataDir(sourceUserDataDir);
+  const base = path.basename(resolveKeepProfileHint(sourceUserDataDir));
+  if (base === "Default" || /^Profile \d+$/i.test(base)) {
+    return { root, profile: base };
   }
-  return "Default";
+  return { root, profile: detectChromeProfileName(root) };
 }
 
-function normalizeSource(sourceUserDataDir: string): { root: string; profile: string } {
-  const base = path.basename(sourceUserDataDir);
-  if (base === "Default" || /^Profile \d+$/i.test(base)) {
-    return { root: path.dirname(sourceUserDataDir), profile: base };
+function resolveKeepProfileHint(raw: string): string {
+  const trimmed = (raw || "").trim();
+  if (!trimmed) return "";
+  if (trimmed.startsWith("~/")) {
+    return path.join(os.homedir(), trimmed.slice(2));
   }
-  return { root: sourceUserDataDir, profile: detectProfileName(sourceUserDataDir) };
+  return path.resolve(trimmed);
 }
 
 function cloneNeedsSync(sourceRoot: string, cloneRoot: string, profile: string): boolean {
@@ -96,9 +99,9 @@ function cloneNeedsSync(sourceRoot: string, cloneRoot: string, profile: string):
   try {
     const srcM = fs.statSync(srcCookies).mtimeMs;
     const dstM = fs.statSync(dstCookies).mtimeMs;
-    // Resync if source cookies are > 2 minutes newer
     return srcM > dstM + 120_000;
-  } catch {
+  } catch (err) {
+    if (isChromeEpermError(err)) throw err;
     return true;
   }
 }
@@ -119,14 +122,46 @@ async function copyFiltered(src: string, dest: string): Promise<void> {
     recursive: true,
     force: true,
     errorOnExist: false,
-    filter: (srcPath) => shouldCopy(srcPath),
+    filter: (srcPath) => shouldCopyPath(srcPath),
   });
+}
+
+/** macOS ditto often handles TCC better than Node fs.cp for large trees */
+async function copyWithDitto(src: string, dest: string): Promise<void> {
+  fs.mkdirSync(path.dirname(dest), { recursive: true });
+  if (fs.existsSync(dest)) {
+    fs.rmSync(dest, { recursive: true, force: true });
+  }
+  await execFileAsync("/usr/bin/ditto", [src, dest], { timeout: 180_000 });
+  // Strip heavy caches from clone after ditto
+  for (const name of SKIP_DIRNAMES) {
+    const p = path.join(dest, name);
+    try {
+      if (fs.existsSync(p)) fs.rmSync(p, { recursive: true, force: true });
+    } catch {
+      /* ignore */
+    }
+  }
+  for (const name of SKIP_BASENAMES) {
+    const p = path.join(dest, name);
+    try {
+      if (fs.existsSync(p)) fs.rmSync(p, { force: true });
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+function assertReadableDir(dir: string): void {
+  try {
+    fs.readdirSync(dir);
+  } catch (err) {
+    throw err;
+  }
 }
 
 /**
  * Ensure a Jobbot-owned Chrome user-data-dir exists, synced from Matan's profile.
- * Playwright always launches against the clone — so normal Chrome can stay open
- * after the first successful sync.
  */
 export async function ensureJobbotChromeProfile(opts: {
   sourceUserDataDir: string;
@@ -139,11 +174,28 @@ export async function ensureJobbotChromeProfile(opts: {
   const cloneRoot = opts.cloneRoot;
   const chromeWasRunning = await isChromeRunning();
 
+  if (!sourceRoot) {
+    throw new Error("לא הוגדר נתיב Chrome");
+  }
   if (!fs.existsSync(sourceRoot)) {
     throw new Error(`נתיב Chrome לא קיים: ${sourceRoot}`);
   }
 
-  const needs = opts.force || cloneNeedsSync(sourceRoot, cloneRoot, profile);
+  // Probe readability early (clears EPERM before long copy)
+  const srcProfile = path.join(sourceRoot, profile);
+  try {
+    assertReadableDir(sourceRoot);
+    if (fs.existsSync(srcProfile)) assertReadableDir(srcProfile);
+  } catch (err) {
+    throw new Error(chromeSyncErrorHe(err, chromeWasRunning));
+  }
+
+  let needs: boolean;
+  try {
+    needs = opts.force || cloneNeedsSync(sourceRoot, cloneRoot, profile);
+  } catch (err) {
+    throw new Error(chromeSyncErrorHe(err, chromeWasRunning));
+  }
 
   if (!needs) {
     scrubSingletonFiles(cloneRoot);
@@ -162,13 +214,13 @@ export async function ensureJobbotChromeProfile(opts: {
 
   log(
     chromeWasRunning
-      ? "מסנכרן עותק פרופיל בזמן ש-Chrome פתוח — אם נכשל, סגור עם Cmd+Q ונסה שוב (פעם אחת)."
-      : "מסנכרן עותק פרופיל Chrome ל-Jobbot (פעם ראשונה / עדכון) — זה יכול לקחת דקה…",
+      ? "מסנכרן עותק פרופיל בזמן ש-Chrome פתוח — אם נכשל: Cmd+Q או Full Disk Access."
+      : "מסנכרן עותק פרופיל Chrome ל-Jobbot (פעם ראשונה / עדכון)…",
   );
+  log(`מקור (user-data-dir): ${sourceRoot} · פרופיל: ${profile}`);
 
   fs.mkdirSync(cloneRoot, { recursive: true });
 
-  // Copy Local State + selected top-level bits
   for (const name of ["Local State", "First Run"]) {
     const from = path.join(sourceRoot, name);
     const to = path.join(cloneRoot, name);
@@ -176,31 +228,36 @@ export async function ensureJobbotChromeProfile(opts: {
       try {
         await fs.promises.copyFile(from, to);
       } catch (err) {
-        log(`אזהרה: לא הועתק ${name}: ${err instanceof Error ? err.message : String(err)}`);
+        if (isChromeEpermError(err)) throw new Error(chromeSyncErrorHe(err, chromeWasRunning));
+        log(`אזהרה: לא הועתק ${name}`);
       }
     }
   }
 
-  const srcProfile = path.join(sourceRoot, profile);
-  const dstProfile = path.join(cloneRoot, profile);
   if (!fs.existsSync(srcProfile)) {
-    throw new Error(`תיקיית פרופיל לא נמצאה: ${srcProfile}`);
+    throw new Error(
+      `תיקיית פרופיל לא נמצאה: ${srcProfile}\nודא שהנתיב הוא …/Google/Chrome (לא תיקייה ריקה).`,
+    );
   }
 
+  const dstProfile = path.join(cloneRoot, profile);
   try {
-    // Remove stale profile dir then copy filtered
     if (fs.existsSync(dstProfile)) {
       fs.rmSync(dstProfile, { recursive: true, force: true });
     }
-    await copyFiltered(srcProfile, dstProfile);
-  } catch (err) {
-    const detail = err instanceof Error ? err.message : String(err);
-    if (chromeWasRunning) {
-      throw new Error(
-        `סנכרון הפרופיל נכשל בזמן ש-Chrome פתוח (${detail.slice(0, 120)}). סגור את Chrome לגמרי עם Cmd+Q (לא רק לסגור חלון), ודא שאין Chrome ב־Dock עם נקודה, ואז הרץ שוב.`,
-      );
+    if (process.platform === "darwin" && fs.existsSync("/usr/bin/ditto")) {
+      try {
+        await copyWithDitto(srcProfile, dstProfile);
+      } catch (dittoErr) {
+        if (isChromeEpermError(dittoErr)) throw dittoErr;
+        log("ditto נכשל — מנסה העתקה רגילה…");
+        await copyFiltered(srcProfile, dstProfile);
+      }
+    } else {
+      await copyFiltered(srcProfile, dstProfile);
     }
-    throw new Error(`סנכרון פרופיל Chrome נכשל: ${detail.slice(0, 180)}`);
+  } catch (err) {
+    throw new Error(chromeSyncErrorHe(err, chromeWasRunning));
   }
 
   scrubSingletonFiles(cloneRoot);

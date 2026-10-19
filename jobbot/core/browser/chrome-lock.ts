@@ -29,6 +29,17 @@ export function isChromeLockError(err: unknown): boolean {
 export function chromeLaunchErrorHe(err: unknown): string {
   if (isChromeLockError(err)) return CHROME_QUIT_MSG_HE;
   const detail = err instanceof Error ? err.message : String(err);
+  // Already mapped (clone / FDA Hebrew guidance)
+  if (/Full Disk Access|גישה מלאה לדיסק|אין הרשאה לקרוא את פרופיל/i.test(detail)) {
+    return detail;
+  }
+  if (/EPERM|operation not permitted/i.test(detail)) {
+    return (
+      "אין הרשאה לקרוא את פרופיל Chrome (EPERM).\n" +
+      "הגדרות מערכת → פרטיות ואבטחה → Full Disk Access → הפעל Jobbot, " +
+      "סגור Chrome עם Cmd+Q, והנתיב חייב להיות …/Google/Chrome."
+    );
+  }
   return `פתיחת Chrome נכשלה: ${detail.slice(0, 200)}`;
 }
 
@@ -74,11 +85,12 @@ const LOCK_NAMES = ["SingletonLock", "SingletonCookie", "SingletonSocket"] as co
  * Resolve Chrome user-data root (parent if path points at Default/Profile N).
  */
 export function chromeUserDataRoot(userDataDir: string): string {
+  // Local normalize to avoid circular imports with chrome-paths consumers
   const trimmed = (userDataDir || "").trim();
   if (!trimmed) return "";
-  const base = path.basename(trimmed);
+  const base = path.basename(trimmed.replace(/[/\\]+$/, ""));
   if (base === "Default" || /^Profile \d+$/i.test(base)) {
-    return path.dirname(trimmed);
+    return path.dirname(trimmed.replace(/[/\\]+$/, ""));
   }
   return trimmed;
 }

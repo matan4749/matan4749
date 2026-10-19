@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { ensureJobbotChromeProfile, shouldCopyPath } from "./profile-clone";
+import { ensureJobbotChromeProfile, normalizeSource, shouldCopyPath } from "./profile-clone";
 
 describe("chrome profile clone", () => {
   it("skips SingletonLock / Cookie / Socket and heavy Cache dirs", () => {
@@ -51,6 +51,29 @@ describe("chrome profile clone", () => {
     });
     assert.equal(again.synced, false);
 
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
+  it("accepts source path ending in /Default (uses parent as user-data-dir)", async () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "jobbot-clone-def-"));
+    const source = path.join(tmp, "Chrome");
+    const cloneRoot = path.join(tmp, "chrome-clone");
+    fs.mkdirSync(path.join(source, "Default"), { recursive: true });
+    fs.writeFileSync(path.join(source, "Local State"), "{}");
+    fs.writeFileSync(path.join(source, "Default", "Cookies"), "cookies-db");
+    fs.writeFileSync(path.join(source, "Default", "Preferences"), "{}");
+
+    const { root, profile } = normalizeSource(path.join(source, "Default"));
+    assert.equal(root, source);
+    assert.equal(profile, "Default");
+
+    const result = await ensureJobbotChromeProfile({
+      sourceUserDataDir: path.join(source, "Default"),
+      cloneRoot,
+      force: true,
+    });
+    assert.equal(result.sourcePath, source);
+    assert.ok(fs.existsSync(path.join(cloneRoot, "Default", "Cookies")));
     fs.rmSync(tmp, { recursive: true, force: true });
   });
 });

@@ -9,8 +9,8 @@ import { listAdapters } from "../core/adapters/registry";
 import { LearningEngine } from "../core/learning/engine";
 import {
   defaultMacChromeHint,
+  normalizeChromeUserDataDir,
   probeChromeProfile,
-  resolveChromeUserDataDir,
 } from "../core/browser/probe";
 import { checkChromeClosed } from "../core/browser/chrome-lock";
 import { resolveAssistantTurn, llmConfigured } from "../core/chat/llm";
@@ -167,11 +167,11 @@ function registerIpc(): void {
 
   ipcMain.handle("chrome:checkClosed", async (_e, chromeUserDataDir?: string) => {
     const raw = chromeUserDataDir?.trim() || "";
-    const resolved = raw ? resolveChromeUserDataDir(raw) : "";
+    const resolved = raw ? normalizeChromeUserDataDir(raw) : "";
     return checkChromeClosed(resolved);
   });
 
-  ipcMain.handle("chrome:resolvePath", (_e, raw: string) => resolveChromeUserDataDir(raw));
+  ipcMain.handle("chrome:resolvePath", (_e, raw: string) => normalizeChromeUserDataDir(raw));
 
   ipcMain.handle("run:start", async (_e, payload: { settings: AppSettings; config: RunConfig }) => {
     const settings = { ...payload.settings };
@@ -179,7 +179,7 @@ function registerIpc(): void {
       settings.cvPath = seedCvIntoDataDir(dataDir(), appRoot());
     }
     if (settings.chromeUserDataDir) {
-      settings.chromeUserDataDir = resolveChromeUserDataDir(settings.chromeUserDataDir);
+      settings.chromeUserDataDir = normalizeChromeUserDataDir(settings.chromeUserDataDir);
     }
     saveSettings(dataDir(), settings);
     // Recreate runner each run so packaged/demo flags stay correct

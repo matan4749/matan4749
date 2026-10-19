@@ -249,7 +249,10 @@ export default function App() {
 
   async function pickChrome() {
     const p = await api?.pickDir();
-    if (p && settings) await persist({ ...settings, chromeUserDataDir: p });
+    if (!p || !settings) return;
+    // Normalize …/Default or …/Profile N → parent user-data-dir
+    const resolved = (await api.resolveChromePath(p)) || p;
+    await persist({ ...settings, chromeUserDataDir: resolved });
   }
 
   async function useChromeHint() {
@@ -546,11 +549,10 @@ export default function App() {
                   </h3>
                   <ol className="hint" style={{ margin: 0, paddingInlineStart: 18, lineHeight: 1.7 }}>
                     <li>
-                      בחר תיקיית הפרופיל — ב־Mac בדרך כלל:
+                      בחר תיקיית <strong>Google/Chrome</strong> (לא את תיקיית Default שבתוכה) —
+                      ב־Mac:
                       <br />
-                      <code>{chromeHint}</code>
-                      <br />
-                      (או <code>/Users/matan_amar/Library/Application Support/Google/Chrome</code>).
+                      <code>{chromeHint || "/Users/matan_amar/Library/Application Support/Google/Chrome"}</code>
                     </li>
                     <li>התחבר ל־LinkedIn ו־Indeed ב-Chrome הרגיל שלך.</li>
                     <li>
@@ -558,27 +560,38 @@ export default function App() {
                       מוצלח אפשר להשאיר את Chrome פתוח.
                     </li>
                     <li>
-                      אם מופיעה שגיאת «פתיחה בסשן קיים» / נעילה: סגור לגמרי עם{" "}
-                      <strong>Cmd+Q</strong> (לא רק חלון), ודא שאין נקודה ב־Dock, ואז «רענון עותק
-                      פרופיל».
+                      אם מופיע <strong>EPERM / operation not permitted</strong>: הגדרות מערכת →
+                      פרטיות ואבטחה → Full Disk Access → הפעל את Jobbot → הפעל מחדש את Jobbot.
+                      גם סגור Chrome עם <strong>Cmd+Q</strong>.
+                    </li>
+                    <li>
+                      אם מופיעה שגיאת נעילה / «פתיחה בסשן קיים»: סגור לגמרי עם{" "}
+                      <strong>Cmd+Q</strong>, ודא שאין נקודה ב־Dock, ואז «רענון עותק פרופיל».
                     </li>
                   </ol>
                 </div>
 
                 <div className="field">
-                  <label>Chrome user-data-dir (פרופיל מחובר)</label>
+                  <label>תיקיית Chrome (user-data-dir)</label>
                   <div className="row">
                     <input
                       value={settings.chromeUserDataDir}
                       onChange={(e) =>
                         setSettings({ ...settings, chromeUserDataDir: e.target.value })
                       }
-                      placeholder={chromeHint}
+                      placeholder={
+                        chromeHint ||
+                        "/Users/matan_amar/Library/Application Support/Google/Chrome"
+                      }
                     />
                     <button type="button" className="btn" onClick={() => void pickChrome()}>
-                      בחר
+                      בחר תיקיית Chrome
                     </button>
                   </div>
+                  <p className="hint">
+                    הנתיב חייב להסתיים ב־Google/Chrome — אם בחרת Default, Jobbot מתקן אוטומטית
+                    לתיקיית האב.
+                  </p>
                   <div className="cta-row" style={{ marginTop: 8 }}>
                     <button type="button" className="btn" onClick={() => void useChromeHint()}>
                       מלא נתיב Mac ברירת מחדל

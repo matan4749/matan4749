@@ -41,3 +41,13 @@ open -R Jobbot.app
 
 ## צ׳אט
 טאב «צ׳אט» באפליקציה — תכנון ריצה בעברית.
+
+## Chrome / EPERM (חשוב!)
+נתיב נכון: `/Users/matan_amar/Library/Application Support/Google/Chrome`
+(**בלי** `/Default` בסוף).
+
+אם מופיע `EPERM: operation not permitted`:
+1. **הגדרות מערכת → פרטיות ואבטחה → Full Disk Access** → הפעל את **Jobbot**
+2. הפעל מחדש את Jobbot
+3. סגור Chrome לגמרי עם **Cmd+Q**
+4. בהגדרות: «מלא נתיב Mac ברירת מחדל» או «בחר תיקיית Chrome»

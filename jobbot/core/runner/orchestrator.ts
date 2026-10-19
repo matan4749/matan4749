@@ -6,6 +6,7 @@ import { buildReportHtml } from "../email/report";
 import { sendReportEmail } from "../email/send";
 import { analyzeCv } from "../cv/analyze";
 import { CHROME_QUIT_MSG_HE, isChromeLockError } from "../browser/chrome-lock";
+import { normalizeChromeUserDataDir } from "../browser/chrome-paths";
 import { ensureJobbotChromeProfile, jobbotCloneRoot } from "../browser/profile-clone";
 import type {
   AppSettings,
@@ -68,7 +69,7 @@ export class JobRunner {
     };
     this.emit();
 
-    const chromePath = (settings.chromeUserDataDir || "").trim();
+    const chromePath = normalizeChromeUserDataDir(settings.chromeUserDataDir || "");
     if (!this.demo && !chromePath) {
       this.log(
         "error",

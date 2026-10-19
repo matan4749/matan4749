@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { normalizeChromeUserDataDir } from "../browser/chrome-paths";
 import { DEFAULT_SETTINGS, EXCLUDED_SITES, type AppSettings } from "../types";
 import { resolveDefaultCvPath } from "../cv/paths";
 
@@ -27,11 +28,13 @@ function normalize(
   const cvPath = resolveDefaultCvPath(rest.cvPath || base.cvPath, appRoot);
   const reportEmail =
     (rest.reportEmail && rest.reportEmail.trim()) || base.reportEmail;
+  const chromeRaw = (rest.chromeUserDataDir ?? base.chromeUserDataDir) || "";
   return {
     ...base,
     ...rest,
     cvPath,
     reportEmail,
+    chromeUserDataDir: chromeRaw ? normalizeChromeUserDataDir(chromeRaw) : "",
     enabledSites:
       rest.enabledSites && rest.enabledSites.length
         ? sanitizeSites(rest.enabledSites)
@@ -68,7 +71,9 @@ export function saveSettings(dataDir: string, settings: AppSettings): void {
   fs.mkdirSync(dataDir, { recursive: true });
   const clean: AppSettings = {
     cvPath: settings.cvPath,
-    chromeUserDataDir: settings.chromeUserDataDir,
+    chromeUserDataDir: settings.chromeUserDataDir
+      ? normalizeChromeUserDataDir(settings.chromeUserDataDir)
+      : "",
     reportEmail: settings.reportEmail,
     keywords: settings.keywords,
     location: settings.location,

@@ -9,7 +9,16 @@ import {
   isChromeLockError,
   isChromeRunning,
 } from "./chrome-lock";
+import {
+  CHROME_EPERM_MSG_HE,
+  defaultMacChromeUserDataDir,
+  isChromeEpermError,
+  normalizeChromeUserDataDir,
+  resolveChromeUserDataDir,
+} from "./chrome-paths";
 import { ensureJobbotChromeProfile, jobbotCloneRoot } from "./profile-clone";
+
+export { resolveChromeUserDataDir, normalizeChromeUserDataDir } from "./chrome-paths";
 
 export interface ChromeProbeResult {
   ok: boolean;
@@ -23,18 +32,8 @@ export interface ChromeProbeResult {
   detail?: string;
 }
 
-/** Expand ~ and resolve Chrome user-data path */
-export function resolveChromeUserDataDir(raw: string): string {
-  const trimmed = (raw || "").trim();
-  if (!trimmed) return "";
-  if (trimmed.startsWith("~/")) {
-    return path.join(os.homedir(), trimmed.slice(2));
-  }
-  return path.resolve(trimmed);
-}
-
 export function defaultMacChromeHint(): string {
-  return path.join(os.homedir(), "Library/Application Support/Google/Chrome");
+  return defaultMacChromeUserDataDir();
 }
 
 /**
@@ -44,7 +43,7 @@ export async function probeChromeProfile(
   chromeUserDataDir: string,
   opts?: { dataDir?: string; forceSync?: boolean },
 ): Promise<ChromeProbeResult> {
-  const pathUsed = resolveChromeUserDataDir(chromeUserDataDir);
+  const pathUsed = normalizeChromeUserDataDir(chromeUserDataDir);
   if (!pathUsed) {
     return {
       ok: false,
@@ -52,11 +51,25 @@ export async function probeChromeProfile(
       pathUsed: "",
       linkedInLoggedIn: null,
       indeedReachable: null,
-      messageHe: "לא הוגדר נתיב Chrome. בחר תיקיית הפרופיל בהגדרות.",
+      messageHe: "לא הוגדר נתיב Chrome. בחר תיקיית Google/Chrome בהגדרות (בלי /Default).",
     };
   }
 
-  const pathExists = fs.existsSync(pathUsed);
+  let pathExists = false;
+  try {
+    pathExists = fs.existsSync(pathUsed);
+  } catch (err) {
+    if (isChromeEpermError(err)) {
+      return {
+        ok: false,
+        pathExists: false,
+        pathUsed,
+        linkedInLoggedIn: null,
+        indeedReachable: null,
+        messageHe: CHROME_EPERM_MSG_HE,
+      };
+    }
+  }
   if (!pathExists) {
     return {
       ok: false,
@@ -64,7 +77,7 @@ export async function probeChromeProfile(
       pathUsed,
       linkedInLoggedIn: null,
       indeedReachable: null,
-      messageHe: `הנתיב לא קיים: ${pathUsed}`,
+      messageHe: `הנתיב לא קיים: ${pathUsed}\nהשתמש ב־…/Google/Chrome (לא …/Chrome/Default).`,
     };
   }
 
@@ -83,6 +96,8 @@ export async function probeChromeProfile(
     chromeWasRunning = clone.chromeWasRunning;
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
+    const alreadyHe =
+      /Cmd\+Q|Full Disk Access|גישה מלאה לדיסק|אין הרשאה לקרוא|סנכרון/i.test(detail);
     return {
       ok: false,
       pathExists: true,
@@ -90,7 +105,8 @@ export async function probeChromeProfile(
       linkedInLoggedIn: null,
       indeedReachable: null,
       chromeWasRunning: await isChromeRunning(),
-      messageHe: isChromeLockError(err) || /Cmd\+Q/.test(detail) ? detail : chromeLaunchErrorHe(err),
+      messageHe:
+        alreadyHe || isChromeLockError(err) ? detail : chromeLaunchErrorHe(err),
       detail,
     };
   }

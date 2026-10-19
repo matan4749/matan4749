@@ -1,0 +1,2 @@
+# PRIMARY (הכי אמין) — הדבק ב-Terminal:
+mkdir -p ~/Desktop/Jobbot && cd ~/Desktop/Jobbot && cat Jobbot-0.1.0-mac-arm64.tar.gz.part00 Jobbot-0.1.0-mac-arm64.tar.gz.part01 Jobbot-0.1.0-mac-arm64.tar.gz.part02 > Jobbot-mac.tar.gz && tar -tzf Jobbot-mac.tar.gz && tar -xzf Jobbot-mac.tar.gz && xattr -dr com.apple.quarantine Jobbot.app 2>/dev/null; open -R Jobbot.app

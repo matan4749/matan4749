@@ -1,8 +1,8 @@
 # Jobbot Mac arm64 — PRIMARY artifact is .tar.gz (not zip)
 # After cat → Jobbot-mac.tar.gz
-3bbaf5bb6d5dd094020287c43591eff29bcbc69d59b67f57e3331a1ed2d86452  Jobbot-mac.tar.gz
-3bbaf5bb6d5dd094020287c43591eff29bcbc69d59b67f57e3331a1ed2d86452  Jobbot-0.1.0-mac-arm64.tar.gz
+326c47240b1cbd0696adc1d0d59ab02209be25685765f1b2185d8e5dd96d5cba  Jobbot-mac.tar.gz
+326c47240b1cbd0696adc1d0d59ab02209be25685765f1b2185d8e5dd96d5cba  Jobbot-0.1.0-mac-arm64.tar.gz
 
-89b5a4b51ad29ecb5caa977aeeb228ad597b85eb018a7b1eb484d0a84992a0a4  Jobbot-0.1.0-mac-arm64.tar.gz.part00
-8ac492e6268f8b1bc7a080db6ca6db63ed37750b93d9ef4189bec2bdf075018c  Jobbot-0.1.0-mac-arm64.tar.gz.part01
-295f040b4001543a75339fb1bb628be54747689e7fb5f37976c275f06ba89385  Jobbot-0.1.0-mac-arm64.tar.gz.part02
+1e4488e2fbaa007c3ce6273b9cc915eaca70d89e4c2b50f7c9d2484410218ad1  Jobbot-0.1.0-mac-arm64.tar.gz.part00
+751f835e6892aa6b66cd7d74c0905ca598bdd0195fd6861c84a14beafba29e53  Jobbot-0.1.0-mac-arm64.tar.gz.part01
+18de33f0ac2c55fedd05f642a198c867156544018a36c664eac2ed9166e16b37  Jobbot-0.1.0-mac-arm64.tar.gz.part02

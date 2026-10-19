@@ -6,8 +6,7 @@ set -euo pipefail
 REPO_URL="https://github.com/matan4749/matan4749.git"
 BRANCH="cursor/jobbot-desktop-app-4bd4"
 APP_DIR="${HOME}/Desktop/Jobbot-src"
-
-export PATH="/usr/local/bin:/opt/homebrew/bin:$PATH"
+export PATH="/usr/local/bin:/opt/homebrew/bin:$HOME/.nvm/versions/node/$(ls "$HOME/.nvm/versions/node" 2>/dev/null | tail -1)/bin:$PATH"
 
 echo ""
 echo "══════════════════════════════════════"
@@ -16,15 +15,12 @@ echo "════════════════════════�
 echo ""
 
 if ! command -v node >/dev/null 2>&1; then
-  echo "❌ לא נמצא Node.js"
-  echo "   התקן מ־https://nodejs.org (LTS) ואז לחץ שוב על הקובץ."
+  echo "❌ לא נמצא Node.js — התקן מ־https://nodejs.org (LTS)"
   read -r -p "לחץ Enter לסגירה… " _
   exit 1
 fi
-
 if ! command -v git >/dev/null 2>&1; then
-  echo "❌ לא נמצא git — התקן Xcode Command Line Tools:"
-  echo "   xcode-select --install"
+  echo "❌ לא נמצא git — xcode-select --install"
   read -r -p "לחץ Enter לסגירה… " _
   exit 1
 fi
@@ -37,10 +33,7 @@ if [[ ! -d "$APP_DIR/.git" ]]; then
   mkdir -p "$(dirname "$APP_DIR")"
   rm -rf "$APP_DIR"
   if ! git clone --branch "$BRANCH" --single-branch "$REPO_URL" "$APP_DIR"; then
-    echo ""
-    echo "❌ השכפול נכשל (ריפו פרטי?)."
-    echo "   בטרמינל: gh auth login   ואז הרץ שוב."
-    echo "   או: העתק את הריפו ידנית ל־$APP_DIR"
+    echo "❌ השכפול נכשל. נסה: gh auth login"
     read -r -p "לחץ Enter לסגירה… " _
     exit 1
   fi
@@ -61,6 +54,4 @@ echo "בונה…"
 npm run build
 echo ""
 echo "מפעיל את Jobbot…"
-echo "(סגור את חלון הטרמינל רק אחרי שסגרת את Jobbot)"
-echo ""
 npm start

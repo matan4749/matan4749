@@ -10,9 +10,11 @@ import {
   detectChromeProfileName,
   normalizeChromeUserDataDir,
 } from "../browser/chrome-paths";
+import { jobbotBrowserProfileRoot } from "../browser/jobbot-profile";
+import { launchChromePersistent, type LaunchedChrome } from "../browser/launch-chrome";
+import { openLoginGatePages } from "../browser/login-gate";
 import { ensureJobbotChromeProfile, jobbotCloneRoot } from "../browser/profile-clone";
 import { assertChromeSessionArtifacts } from "../browser/session-artifacts";
-import { verifyLinkedInSession } from "../browser/session-gate";
 import type {
   AppSettings,
   ApplyResult,
@@ -30,6 +32,9 @@ export class JobRunner {
   private listeners = new Set<ProgressListener>();
   private learning: LearningEngine;
   private demo: boolean;
+  private loginGateWait: {
+    resolve: (action: "continue" | "cancel") => void;
+  } | null = null;
 
   constructor(
     private dataDir: string,
@@ -52,8 +57,18 @@ export class JobRunner {
 
   stop(): void {
     this.abort?.abort();
+    this.loginGateWait?.resolve("cancel");
+    this.loginGateWait = null;
     this.patch({ phase: "stopped" });
     this.log("warn", "הריצה נעצרה לפי בקשת המשתמש");
+  }
+
+  /** UI: «המשך לריצה» / «ביטול» during awaiting-login */
+  resolveLoginGate(action: "continue" | "cancel"): boolean {
+    if (!this.loginGateWait) return false;
+    this.loginGateWait.resolve(action);
+    this.loginGateWait = null;
+    return true;
   }
 
   async run(settings: AppSettings, config: RunConfig): Promise<{
@@ -74,20 +89,12 @@ export class JobRunner {
     };
     this.emit();
 
+    const browserMode = settings.browserMode === "live" ? "live" : "jobbot";
     const chromePath = normalizeChromeUserDataDir(settings.chromeUserDataDir || "");
-    if (!this.demo && !chromePath) {
-      this.log(
-        "error",
-        "חסימה: לא הוגדר נתיב Chrome — בלי פרופיל מחובר אי אפשר להגיש מועמדויות אמיתיות",
-      );
-      this.log(
-        "info",
-        "מה לעשות: 1) סגור Chrome לגמרי (Cmd+Q)  2) בהגדרות בחר ~/Library/Application Support/Google/Chrome  3) פתח Chrome, התחבר ללינקדאין/אינדיד  4) סגור Chrome  5) הרץ שוב",
-      );
-      this.patch({
-        phase: "error",
-        finishedAt: new Date().toISOString(),
-      });
+
+    if (!this.demo && browserMode === "live" && !chromePath) {
+      this.log("error", "מצב Chrome מערכת — חסר נתיב …/Google/Chrome בהגדרות");
+      this.patch({ phase: "error", finishedAt: new Date().toISOString() });
       const reportHtml = buildReportHtml({
         userName: "מתן עמר",
         progress: this.progress,
@@ -97,127 +104,125 @@ export class JobRunner {
         progress: this.getProgress(),
         reportHtml,
         email: { ok: false, previewOnly: true, error: "CHROME_PROFILE_REQUIRED" },
-        learningNotes: ["נדרש נתיב Chrome להגשות אמיתיות"],
+        learningNotes: ["נדרש נתיב Chrome במצב מערכת"],
       };
     }
 
     const keywords = await this.resolveKeywords(settings, config);
-    this.log("info", `מצב חיפוש: ${config.searchMode === "cv" ? "מקו״ח" : "מילות מפתח"} · ${keywords.join(", ")}`);
-
-    let jobbotChromeProfileDir: string | undefined;
-    let chromeProfileDirectory = "Default";
-    const useClone = Boolean(settings.useChromeClone);
-
-    if (this.demo) {
-      this.log("warn", "מצב הדגמה פעיל — לא יוגשו מועמדויות אמיתיות");
-    } else {
-      this.log("info", `מקור Chrome: ${chromePath}`);
-      chromeProfileDirectory = detectChromeProfileName(chromePath);
-
-      // Live mode (default): Chrome must be fully quit; launch against real user-data-dir
-      if (!useClone) {
-        this.log(
-          "info",
-          "מצב פרופיל חי — Jobbot יפתח את Chrome שלך עם הפרופיל המחובר (חובה Cmd+Q לפני ריצה)",
-        );
-        const closed = await checkChromeClosed(chromePath);
-        if (!closed.ok) {
-          this.log("error", closed.messageHe);
-          this.log("error", CHROME_QUIT_MSG_HE);
-          this.patch({ phase: "error", finishedAt: new Date().toISOString() });
-          const reportHtml = buildReportHtml({
-            userName: "מתן עמר",
-            progress: this.progress,
-            results: [],
-          });
-          return {
-            progress: this.getProgress(),
-            reportHtml,
-            email: { ok: false, previewOnly: true, error: "CHROME_STILL_OPEN" },
-            learningNotes: [closed.messageHe],
-          };
-        }
-        try {
-          assertChromeSessionArtifacts(chromePath, chromeProfileDirectory);
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err);
-          this.log("error", msg);
-          this.patch({ phase: "error", finishedAt: new Date().toISOString() });
-          const reportHtml = buildReportHtml({
-            userName: "מתן עמר",
-            progress: this.progress,
-            results: [],
-          });
-          return {
-            progress: this.getProgress(),
-            reportHtml,
-            email: { ok: false, previewOnly: true, error: "CHROME_SESSION_EMPTY" },
-            learningNotes: [msg],
-          };
-        }
-        jobbotChromeProfileDir = undefined;
-        this.log("info", `פרופיל חי מוכן (${chromeProfileDirectory}) — ללא עותק`);
-      } else {
-        this.log("info", "מצב עותק פרופיל — מסנכרן ואז מפעיל על עותק Jobbot");
-        try {
-          const clone = await ensureJobbotChromeProfile({
-            sourceUserDataDir: chromePath,
-            cloneRoot: jobbotCloneRoot(this.dataDir),
-            log: (m) => this.log("info", m),
-          });
-          assertChromeSessionArtifacts(clone.path, chromeProfileDirectory);
-          jobbotChromeProfileDir = clone.path;
-          this.log("info", clone.messageHe);
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err);
-          this.log("error", isChromeLockError(err) ? CHROME_QUIT_MSG_HE : msg);
-          this.patch({ phase: "error", finishedAt: new Date().toISOString() });
-          const reportHtml = buildReportHtml({
-            userName: "מתן עמר",
-            progress: this.progress,
-            results: [],
-          });
-          return {
-            progress: this.getProgress(),
-            reportHtml,
-            email: { ok: false, previewOnly: true, error: "CHROME_PROFILE_SYNC_FAILED" },
-            learningNotes: [msg],
-          };
-        }
-      }
-
-      // Session gate: LinkedIn login wall → abort (never continue with empty session)
-      const launchDir = jobbotChromeProfileDir || chromePath;
-      const gate = await verifyLinkedInSession({
-        userDataDir: launchDir,
-        profileDirectory: chromeProfileDirectory,
-        log: (m) => this.log("info", m),
-      });
-      if (!gate.ok) {
-        this.log("error", gate.messageHe);
-        this.patch({ phase: "error", finishedAt: new Date().toISOString() });
-        const reportHtml = buildReportHtml({
-          userName: "מתן עמר",
-          progress: this.progress,
-          results: [],
-        });
-        return {
-          progress: this.getProgress(),
-          reportHtml,
-          email: { ok: false, previewOnly: true, error: "LINKEDIN_NOT_LOGGED_IN" },
-          learningNotes: [gate.messageHe],
-        };
-      }
-      this.log("info", gate.messageHe);
-    }
+    this.log(
+      "info",
+      `מצב חיפוש: ${config.searchMode === "cv" ? "מקו״ח" : "מילות מפתח"} · ${keywords.join(", ")}`,
+    );
 
     const enabled = config.enabledSites.length
       ? config.enabledSites
       : settings.enabledSites;
     const adapters = listAdapters().filter((a) => enabled.includes(a.id));
 
+    let sharedBrowser: LaunchedChrome | undefined;
+    let profilePath = "";
+    let chromeProfileDirectory = "Default";
+
+    if (this.demo) {
+      this.log("warn", "מצב הדגמה פעיל — לא יוגשו מועמדויות אמיתיות");
+    } else {
+      try {
+        if (browserMode === "jobbot") {
+          profilePath = jobbotBrowserProfileRoot(this.dataDir);
+          chromeProfileDirectory = "Default";
+          this.log(
+            "info",
+            `פרופיל Jobbot קבוע: ${profilePath} (ההתחברויות נשמרות בין ריצות — Chrome הרגיל יכול להישאר פתוח)`,
+          );
+        } else if (settings.useChromeClone) {
+          this.log("info", "מצב מתקדם: עותק מפרופיל המערכת…");
+          const closed = await checkChromeClosed(chromePath);
+          if (!closed.ok) {
+            this.log("error", closed.messageHe);
+            this.patch({ phase: "error", finishedAt: new Date().toISOString() });
+            return earlyError(this, closed.messageHe, "CHROME_STILL_OPEN");
+          }
+          const clone = await ensureJobbotChromeProfile({
+            sourceUserDataDir: chromePath,
+            cloneRoot: jobbotCloneRoot(this.dataDir),
+            log: (m) => this.log("info", m),
+          });
+          assertChromeSessionArtifacts(clone.path);
+          profilePath = clone.path;
+          chromeProfileDirectory = detectChromeProfileName(chromePath);
+          this.log("info", clone.messageHe);
+        } else {
+          this.log("info", "מצב Chrome מערכת — חובה Cmd+Q לפני ריצה");
+          const closed = await checkChromeClosed(chromePath);
+          if (!closed.ok) {
+            this.log("error", closed.messageHe || CHROME_QUIT_MSG_HE);
+            this.patch({ phase: "error", finishedAt: new Date().toISOString() });
+            return earlyError(this, closed.messageHe, "CHROME_STILL_OPEN");
+          }
+          profilePath = chromePath;
+          chromeProfileDirectory = detectChromeProfileName(chromePath);
+        }
+
+        sharedBrowser = await launchChromePersistent({
+          userDataDir: profilePath,
+          profileDirectory: chromeProfileDirectory,
+          log: (m) => this.log("info", m),
+        });
+
+        // Manual login gate — open site tabs, wait for Matan
+        const gateSites = adapters.map((a) => ({
+          id: a.id,
+          displayNameHe: a.displayNameHe,
+        }));
+        const statuses = await openLoginGatePages(sharedBrowser, gateSites, (m) =>
+          this.log("info", m),
+        );
+        this.patch({
+          phase: "awaiting-login",
+          loginGate: {
+            sites: statuses,
+            messageHe:
+              "התחבר לאתרים בחלון Chrome שנפתח. כשסיימת — לחץ «המשך לריצה». ההתחברות נשמרת לפעם הבאה.",
+          },
+        });
+        this.log("info", "ממתין להתחברות ידנית… («המשך לריצה» / «ביטול»)");
+
+        const gateAction = await this.waitForLoginGate(signal);
+        this.patch({ loginGate: undefined });
+        if (gateAction !== "continue" || signal.aborted) {
+          this.log("warn", "הריצה בוטלה בשער ההתחברות");
+          await sharedBrowser.close().catch(() => undefined);
+          sharedBrowser = undefined;
+          this.patch({
+            phase: signal.aborted ? "stopped" : "stopped",
+            finishedAt: new Date().toISOString(),
+          });
+          const reportHtml = buildReportHtml({
+            userName: "מתן עמר",
+            progress: this.progress,
+            results: [],
+          });
+          return {
+            progress: this.getProgress(),
+            reportHtml,
+            email: { ok: false, previewOnly: true, error: "LOGIN_GATE_CANCELLED" },
+            learningNotes: ["בוטל בשער התחברות"],
+          };
+        }
+        this.log("info", "המשתמש אישר התחברות — ממשיכים לחיפוש/הגשה באותו חלון Chrome");
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        this.log("error", isChromeLockError(err) ? CHROME_QUIT_MSG_HE : msg.split("\n")[0] || msg);
+        await sharedBrowser?.close().catch(() => undefined);
+        sharedBrowser = undefined;
+        this.patch({ phase: "error", finishedAt: new Date().toISOString() });
+        return earlyError(this, msg, "CHROME_LAUNCH_FAILED");
+      }
+    }
+
     const allResults: ApplyResult[] = [];
 
+    try {
     for (const adapter of adapters) {
       if (signal.aborted) break;
 
@@ -228,13 +233,12 @@ export class JobRunner {
       );
 
       const knowledge = this.learning.getSiteKnowledge(adapter.id);
-      // Real mode: never fall back to demo just because something failed later
       const ctx: SiteAdapterContext = {
         demo: this.demo,
-        chromeUserDataDir: chromePath || undefined,
-        // Only set in clone mode — live mode must open the real path
-        jobbotChromeProfileDir: useClone ? jobbotChromeProfileDir : undefined,
+        chromeUserDataDir: profilePath || chromePath || undefined,
+        jobbotChromeProfileDir: browserMode === "jobbot" ? profilePath : undefined,
         chromeProfileDirectory,
+        sharedBrowser,
         cvPath: settings.cvPath || undefined,
         timeoutMs: config.perJobTimeoutMs,
         knowledge,
@@ -344,6 +348,13 @@ export class JobRunner {
         }
       }
     }
+    } finally {
+      if (sharedBrowser) {
+        this.log("info", "סוגר חלון Chrome של Jobbot (הפרופיל נשמר לדיסק)");
+        await sharedBrowser.close().catch(() => undefined);
+        sharedBrowser = undefined;
+      }
+    }
 
     const realApplied = allResults.filter(isRealApplied).length;
     if (realApplied === 0) {
@@ -406,6 +417,27 @@ export class JobRunner {
     };
   }
 
+  private waitForLoginGate(signal: AbortSignal): Promise<"continue" | "cancel"> {
+    return new Promise((resolve) => {
+      if (signal.aborted) {
+        resolve("cancel");
+        return;
+      }
+      const onAbort = () => {
+        this.loginGateWait = null;
+        signal.removeEventListener("abort", onAbort);
+        resolve("cancel");
+      };
+      signal.addEventListener("abort", onAbort, { once: true });
+      this.loginGateWait = {
+        resolve: (action) => {
+          signal.removeEventListener("abort", onAbort);
+          resolve(action);
+        },
+      };
+    });
+  }
+
   private async resolveKeywords(settings: AppSettings, config: RunConfig): Promise<string[]> {
     if (config.searchMode === "keywords") {
       if (config.keywords?.length) return config.keywords;
@@ -460,6 +492,29 @@ function idleProgress(): RunProgress {
     skipped: 0,
     logs: [],
     results: [],
+  };
+}
+
+function earlyError(
+  runner: JobRunner,
+  message: string,
+  error: string,
+): {
+  progress: RunProgress;
+  reportHtml: string;
+  email: { ok: boolean; previewOnly?: boolean; error?: string };
+  learningNotes: string[];
+} {
+  const reportHtml = buildReportHtml({
+    userName: "מתן עמר",
+    progress: runner.getProgress(),
+    results: [],
+  });
+  return {
+    progress: runner.getProgress(),
+    reportHtml,
+    email: { ok: false, previewOnly: true, error },
+    learningNotes: [message],
   };
 }
 

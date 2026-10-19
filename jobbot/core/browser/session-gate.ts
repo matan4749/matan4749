@@ -1,4 +1,3 @@
-import type { BrowserContext } from "playwright";
 import { chromeLaunchErrorHe, isChromeLockError } from "./chrome-lock";
 import { detectChromeProfileName, normalizeChromeUserDataDir } from "./chrome-paths";
 import { launchChromePersistent } from "./launch-chrome";
@@ -39,14 +38,15 @@ export async function verifyLinkedInSession(opts: {
 
   log(`בודק התחברות LinkedIn… (${profileDir} · ${profileDirectory})`);
 
-  let context: BrowserContext | undefined;
+  let launched;
   try {
-    context = await launchChromePersistent({
+    launched = await launchChromePersistent({
       userDataDir: profileDir,
       profileDirectory,
       viewport: { width: 1100, height: 800 },
+      log,
     });
-    const page = context.pages()[0] ?? (await context.newPage());
+    const page = launched.context.pages()[0] ?? (await launched.context.newPage());
     await page.goto("https://www.linkedin.com/feed/", {
       waitUntil: "domcontentloaded",
       timeout: 45000,
@@ -68,8 +68,8 @@ export async function verifyLinkedInSession(opts: {
         .count()) > 0;
 
     const loggedIn = Boolean(loggedInHints && !loginWall);
-    await context.close().catch(() => undefined);
-    context = undefined;
+    await launched.close().catch(() => undefined);
+    launched = undefined;
 
     if (!loggedIn) {
       return {
@@ -89,22 +89,13 @@ export async function verifyLinkedInSession(opts: {
       messageHe: "מחובר ללינקדאין בפרופיל Chrome — ממשיכים.",
     };
   } catch (err) {
-    await context?.close().catch(() => undefined);
-    if (isChromeLockError(err)) {
-      return {
-        ok: false,
-        loggedIn: false,
-        url: "",
-        profileDir,
-        messageHe: chromeLaunchErrorHe(err),
-      };
-    }
+    if (launched) await launched.close().catch(() => undefined);
     return {
       ok: false,
       loggedIn: false,
       url: "",
       profileDir,
-      messageHe: chromeLaunchErrorHe(err),
+      messageHe: isChromeLockError(err) ? chromeLaunchErrorHe(err) : chromeLaunchErrorHe(err),
     };
   }
 }

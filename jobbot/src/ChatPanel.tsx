@@ -210,9 +210,14 @@ export default function ChatPanel({ settings, onApplyPlan, onStartFromPlan, runn
               {feedback}
             </p>
           )}
-          {!settings.chromeUserDataDir?.trim() && (
+          {settings.browserMode === "live" && !settings.chromeUserDataDir?.trim() && (
             <p className="hint" style={{ color: "var(--danger)" }}>
-              ריצה תיחסם בלי נתיב Chrome — מלא בהגדרות לפני «הפעל ריצה».
+              מצב Chrome מערכת — חסר נתיב. עבור להגדרות או בחר «פרופיל Jobbot».
+            </p>
+          )}
+          {settings.browserMode !== "live" && (
+            <p className="hint">
+              בתחילת הריצה ייפתח Chrome להתחברות ידנית — ואז «המשך לריצה».
             </p>
           )}
         </div>

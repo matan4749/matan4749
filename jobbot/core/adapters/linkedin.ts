@@ -1,7 +1,7 @@
 import type { SiteAdapter } from "./types";
 import { demoApply, demoJobs } from "./demo";
 import { detectApplyConfirmation } from "./confirm";
-import { clickFirst, fillFirst, pickSelector, withBrowserPage } from "../browser/session";
+import { clickFirst, fillFirst, hasBrowserSession, pickSelector, withBrowserPage } from "../browser/session";
 import type { ApplyMethod, ApplyResult, JobListing, SiteAdapterContext, SiteSearchParams } from "../types";
 
 const SEARCH_URL = "https://www.linkedin.com/jobs/search/";
@@ -15,8 +15,8 @@ export const linkedinAdapter: SiteAdapter = {
   defaultApplyMethod: "chrome-session",
 
   async search(params: SiteSearchParams, ctx: SiteAdapterContext): Promise<JobListing[]> {
-    if (ctx.demo || !ctx.chromeUserDataDir) {
-      ctx.log("info", "LinkedIn: מצב הדגמה / ללא פרופיל Chrome — מחזיר משרות לדוגמה");
+    if (ctx.demo || !hasBrowserSession(ctx)) {
+      ctx.log("info", "LinkedIn: מצב הדגמה / ללא דפדפן — מחזיר משרות לדוגמה");
       return demoJobs("linkedin", params);
     }
 
@@ -78,7 +78,7 @@ export const linkedinAdapter: SiteAdapter = {
 
   async apply(job: JobListing, ctx: SiteAdapterContext): Promise<ApplyResult> {
     const method = await this.detectApplyMethod(job, ctx);
-    if (ctx.demo || !ctx.chromeUserDataDir) {
+    if (ctx.demo || !hasBrowserSession(ctx)) {
       return demoApply(job, ctx, method);
     }
 

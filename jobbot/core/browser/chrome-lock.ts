@@ -29,9 +29,27 @@ export function isChromeLockError(err: unknown): boolean {
 export function chromeLaunchErrorHe(err: unknown): string {
   if (isChromeLockError(err)) return CHROME_QUIT_MSG_HE;
   const detail = err instanceof Error ? err.message : String(err);
-  // Already mapped (clone / FDA Hebrew guidance)
-  if (/Full Disk Access|גישה מלאה לדיסק|אין הרשאה לקרוא את פרופיל/i.test(detail)) {
-    return detail;
+  // Already mapped Hebrew guidance (timeout checklist / FDA / etc.) — first line only, no Playwright dumps
+  if (
+    /Full Disk Access|גישה מלאה לדיסק|אין הרשאה לקרוא את פרופיל|פתיחת Chrome נכשלה \(timeout\)|Activity Monitor|SingletonLock/i.test(
+      detail,
+    )
+  ) {
+    // Keep multi-line Hebrew checklists; strip call logs after blank line + "Call log"
+    const cut = detail.split(/\nCall log/i)[0]?.trim() || detail;
+    return cut.slice(0, 900);
+  }
+  if (/Timeout \d+ms exceeded|CDP|connectOverCDP|launchPersistentContext/i.test(detail)) {
+    // Lazy import avoided — duplicate short checklist (kept in launch-chrome as CHROME_LAUNCH_TIMEOUT_HE)
+    return (
+      "פתיחת Chrome נכשלה (timeout).\n" +
+      "בדוק:\n" +
+      "1) Cmd+Q — אין «Google Chrome» ב-Activity Monitor\n" +
+      "2) Full Disk Access ל־Jobbot\n" +
+      "3) אם מופיעה בקשת Keychain — אשר\n" +
+      "4) מחק SingletonLock יתום תחת …/Google/Chrome אם אין תהליך Chrome\n" +
+      "5) הנתיב: …/Google/Chrome (בלי /Default)"
+    );
   }
   if (/EPERM|operation not permitted/i.test(detail)) {
     return (
@@ -40,7 +58,8 @@ export function chromeLaunchErrorHe(err: unknown): string {
       "סגור Chrome עם Cmd+Q, והנתיב חייב להיות …/Google/Chrome."
     );
   }
-  return `פתיחת Chrome נכשלה: ${detail.slice(0, 200)}`;
+  const first = detail.split("\n")[0]?.trim().slice(0, 160) || "שגיאה לא ידועה";
+  return `פתיחת Chrome נכשלה: ${first}`;
 }
 
 /** True if Google Chrome (not Playwright Chromium) appears to be running */

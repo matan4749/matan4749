@@ -31,12 +31,17 @@ function normalize(
   const chromeRaw = (rest.chromeUserDataDir ?? base.chromeUserDataDir) || "";
   const useChromeClone =
     typeof rest.useChromeClone === "boolean" ? rest.useChromeClone : base.useChromeClone;
+  const browserMode =
+    rest.browserMode === "live" || rest.browserMode === "jobbot"
+      ? rest.browserMode
+      : base.browserMode;
   return {
     ...base,
     ...rest,
     cvPath,
     reportEmail,
     chromeUserDataDir: chromeRaw ? normalizeChromeUserDataDir(chromeRaw) : "",
+    browserMode,
     useChromeClone,
     enabledSites:
       rest.enabledSites && rest.enabledSites.length
@@ -77,6 +82,7 @@ export function saveSettings(dataDir: string, settings: AppSettings): void {
     chromeUserDataDir: settings.chromeUserDataDir
       ? normalizeChromeUserDataDir(settings.chromeUserDataDir)
       : "",
+    browserMode: settings.browserMode === "live" ? "live" : "jobbot",
     useChromeClone: Boolean(settings.useChromeClone),
     reportEmail: settings.reportEmail,
     keywords: settings.keywords,

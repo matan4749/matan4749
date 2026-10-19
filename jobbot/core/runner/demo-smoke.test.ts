@@ -47,10 +47,15 @@ describe("demo / honest-run smoke", () => {
       `phase=${result.progress.phase}`,
     );
 
-    // Packaged-style blocker: no chrome + not demo → early Hebrew error, applied 0
+    // Live mode without system Chrome path → early Hebrew error (jobbot mode needs no path)
     const blocker = new JobRunner(dataDir, { demo: false, allowDemo: false });
     const blocked = await blocker.run(
-      { ...DEFAULT_SETTINGS, chromeUserDataDir: "", sendEmailAfterRun: false },
+      {
+        ...DEFAULT_SETTINGS,
+        browserMode: "live",
+        chromeUserDataDir: "",
+        sendEmailAfterRun: false,
+      },
       {
         searchMode: "keywords",
         keywords: ["React"],
@@ -66,7 +71,7 @@ describe("demo / honest-run smoke", () => {
     assert.equal(blocked.progress.phase, "error");
     assert.equal(blocked.email.error, "CHROME_PROFILE_REQUIRED");
     assert.ok(
-      blocked.progress.logs.some((l) => /Chrome|Cmd\+Q|פרופיל/i.test(l.message)),
+      blocked.progress.logs.some((l) => /Chrome|מערכת|נתיב/i.test(l.message)),
       "expected Hebrew chrome blocker log",
     );
 

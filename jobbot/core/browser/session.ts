@@ -1,7 +1,16 @@
 import type { BrowserContext, Page } from "playwright";
 import type { SiteAdapterContext } from "../types";
 import { chromeLaunchErrorHe, isChromeLockError } from "./chrome-lock";
-import { launchChromePersistent, resolveLaunchUserDataDir } from "./launch-chrome";
+import { launchChromePersistent, resolveLaunchUserDataDir, type LaunchedChrome } from "./launch-chrome";
+
+/** True when adapters should use real browser automation (not demo stubs) */
+export function hasBrowserSession(ctx: SiteAdapterContext): boolean {
+  return Boolean(
+    ctx.sharedBrowser ||
+      ctx.jobbotChromeProfileDir ||
+      ctx.chromeUserDataDir,
+  );
+}
 
 export async function withBrowserPage<T>(
   ctx: SiteAdapterContext,
@@ -11,37 +20,55 @@ export async function withBrowserPage<T>(
     throw new Error("DEMO_MODE_NO_BROWSER");
   }
 
-  // Live mode (default): real chromeUserDataDir. Clone only when jobbotChromeProfileDir is set.
+  // Prefer shared session from login gate (same Chrome for whole run)
+  if (ctx.sharedBrowser) {
+    const context = ctx.sharedBrowser.context;
+    const page = await context.newPage();
+    try {
+      return await fn(page, context);
+    } catch (err) {
+      if (isChromeLockError(err)) {
+        throw new Error(chromeLaunchErrorHe(err));
+      }
+      throw err;
+    } finally {
+      await page.close().catch(() => undefined);
+    }
+  }
+
   const profileDir = resolveLaunchUserDataDir({
     chromeUserDataDir: ctx.chromeUserDataDir,
     jobbotChromeProfileDir: ctx.jobbotChromeProfileDir,
-    useChromeClone: Boolean(ctx.jobbotChromeProfileDir),
+    useChromeClone: Boolean(ctx.jobbotChromeProfileDir && !ctx.chromeUserDataDir),
   });
-  if (!profileDir) {
+  // Prefer jobbot profile path when both set
+  const userDataDir = ctx.jobbotChromeProfileDir || profileDir;
+  if (!userDataDir) {
     throw new Error("לא הוגדר נתיב Chrome");
   }
 
-  let context: BrowserContext;
+  let launched: LaunchedChrome;
   try {
-    context = await launchChromePersistent({
-      userDataDir: profileDir,
+    launched = await launchChromePersistent({
+      userDataDir,
       profileDirectory: ctx.chromeProfileDirectory,
+      log: (m) => ctx.log("info", m),
     });
   } catch (err) {
     throw new Error(chromeLaunchErrorHe(err));
   }
 
-  const page = context.pages()[0] ?? (await context.newPage());
+  const page = launched.context.pages()[0] ?? (await launched.context.newPage());
 
   try {
-    return await fn(page, context);
+    return await fn(page, launched.context);
   } catch (err) {
     if (isChromeLockError(err)) {
       throw new Error(chromeLaunchErrorHe(err));
     }
     throw err;
   } finally {
-    await context.close().catch(() => undefined);
+    await launched.close().catch(() => undefined);
   }
 }
 

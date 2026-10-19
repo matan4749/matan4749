@@ -202,6 +202,10 @@ function registerIpc(): void {
     return true;
   });
 
+  ipcMain.handle("run:loginGate", (_e, action: "continue" | "cancel") => {
+    return getRunner().resolveLoginGate(action === "continue" ? "continue" : "cancel");
+  });
+
   ipcMain.handle("run:progress", () => getRunner().getProgress());
 
   ipcMain.handle("report:last", () => lastReportHtml);

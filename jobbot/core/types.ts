@@ -44,15 +44,17 @@ export interface SiteSearchParams {
 
 export interface SiteAdapterContext {
   demo: boolean;
-  /** Source Chrome user-data-dir (Matan's real profile) — used in live mode */
+  /** Path used as Chrome user-data-dir for this run (Jobbot profile or system) */
   chromeUserDataDir?: string;
-  /**
-   * Only set when useChromeClone is on. Live mode leaves this undefined so
-   * Playwright opens the real user-data-dir (never a blank profile).
-   */
+  /** Dedicated Jobbot profile under jobbot-data/browser-profile */
   jobbotChromeProfileDir?: string;
   /** Chrome --profile-directory (usually Default) */
   chromeProfileDirectory?: string;
+  /**
+   * Shared browser from the login gate — adapters must reuse this and must NOT
+   * close it (orchestrator closes after the run).
+   */
+  sharedBrowser?: import("./browser/launch-chrome").LaunchedChrome;
   cvPath?: string;
   timeoutMs: number;
   knowledge: SiteKnowledge;
@@ -85,8 +87,26 @@ export interface SuccessHint {
   timestamp: string;
 }
 
+export interface LoginGateProgress {
+  sites: {
+    id: string;
+    displayNameHe: string;
+    url: string;
+    loggedIn: boolean | null;
+  }[];
+  messageHe: string;
+}
+
 export interface RunProgress {
-  phase: "idle" | "searching" | "applying" | "reporting" | "done" | "stopped" | "error";
+  phase:
+    | "idle"
+    | "awaiting-login"
+    | "searching"
+    | "applying"
+    | "reporting"
+    | "done"
+    | "stopped"
+    | "error";
   found: number;
   applied: number;
   failed: number;
@@ -97,6 +117,8 @@ export interface RunProgress {
   results: ApplyResult[];
   startedAt?: string;
   finishedAt?: string;
+  /** Present while phase === awaiting-login */
+  loginGate?: LoginGateProgress;
 }
 
 export interface RunLogEntry {
@@ -120,13 +142,20 @@ export interface RunConfig {
   searchOnly?: boolean;
 }
 
+/** jobbot = dedicated persistent profile + login gate (default). live = system Chrome. */
+export type BrowserMode = "jobbot" | "live";
+
 export interface AppSettings {
   cvPath: string;
   chromeUserDataDir: string;
   /**
-   * When false (default): launchPersistentContext against the live Chrome
-   * user-data-dir. Chrome must be fully quit (Cmd+Q).
-   * When true: sync a Jobbot clone and launch against the clone (Chrome may stay open).
+   * Default `jobbot`: persistent Jobbot profile + manual login gate.
+   * Normal Chrome can stay open. Logins persist across runs.
+   */
+  browserMode: BrowserMode;
+  /**
+   * Legacy advanced: clone system Chrome into jobbot-data/chrome-clone.
+   * Ignored when browserMode is `jobbot`.
    */
   useChromeClone: boolean;
   /** Destination only — SMTP is app-owned, never configured by the user */
@@ -148,6 +177,7 @@ export const EXCLUDED_SITES = ["gotfriends", "easy"] as const;
 export const DEFAULT_SETTINGS: AppSettings = {
   cvPath: "",
   chromeUserDataDir: "",
+  browserMode: "jobbot",
   useChromeClone: false,
   reportEmail: "matan4749@gmail.com",
   keywords: [

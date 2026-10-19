@@ -16,38 +16,24 @@ open -R Jobbot.app
 
 3. לחיצה ימנית על `Jobbot.app` ← **פתח**
 
-### 2) Join-Jobbot-Mac.command (מומלץ אחרי Terminal)
+### 2) Join-Jobbot-Mac.command
 1. הורד `Join-Jobbot-Mac.command.zip` → חלץ
 2. שים ליד שלושת ה-`.tar.gz.part`
-3. **לחיצה ימנית** ← **פתח** ← פתח  
-   (לא לחיצה כפולה — Gatekeeper עלול לבלוע בשקט)
-4. אם צריך: `chmod +x Join-Jobbot-Mac.command` בטרמינל
-5. אמור להופיע דיאלוג «מתחיל…» מיד
-
-### 3) Join-Jobbot-Mac.app — רק אם .command לא עובד
-- הורד מחדש `Join-Jobbot-Mac.app.zip`
-- לחיצה ימנית ← פתח
-- חייב דיאלוג «מתחיל…» — אם **שום דבר**, חזור ל-Terminal (#1)
+3. **לחיצה ימנית** ← **פתח**
 
 ---
 
-# ⚠️ אסור ללחוץ פעמיים על Jobbot-mac.tar.gz / .zip ב-Finder
+## איך רצים (חשוב!)
+
+1. לחץ **התחל ריצה**
+2. נפתח Chrome של Jobbot — **התחבר ידנית** ללינקדאין / אינדיד וכו׳
+3. באפליקציה לחץ **«המשך לריצה»**
+4. ההתחברות נשמרת — בפעם הבאה לרוב לא צריך שוב
+5. אפשר להשאיר את Chrome הרגיל שלך פתוח
+
+מצב «Chrome מערכת» בהגדרות הוא מתקדם בלבד (Cmd+Q + נתיב `…/Google/Chrome`).
 
 ## קבצים להורדה
 - `Jobbot-0.1.0-mac-arm64.tar.gz.part00` … `part02`
-- `Join-Jobbot-Mac.command.zip` (עדיף) או `.command`
-- `Join-Jobbot-Mac.app.zip` (גיבוי)
+- `Join-Jobbot-Mac.command.zip`
 - `SHA256SUMS.txt`
-
-## צ׳אט
-טאב «צ׳אט» באפליקציה — תכנון ריצה בעברית.
-
-## Chrome — פרופיל חי (ברירת מחדל)
-Jobbot פותח את **Chrome שלך** עם הפרופיל המחובר (לא פרופיל ריק).
-
-1. נתיב: `/Users/matan_amar/Library/Application Support/Google/Chrome` (**בלי** `/Default`)
-2. סגור Chrome לגמרי עם **Cmd+Q** לפני ריצה
-3. **הגדרות מערכת → פרטיות ואבטחה → Full Disk Access** → הפעל **Jobbot** → הפעל מחדש
-4. אופציונלי: «השתמש בעותק / אפשר Chrome פתוח» — רק אם רוצים להשאיר Chrome פתוח; אם העותק בלי Cookies / מסך התחברות — Jobbot עוצר
-
-אם מופיע מסך התחברות ריק בלינקדאין או באנר `--no-sandbox` — התקן את הגרסה החדשה (ללא `--no-sandbox` / ללא mock keychain).

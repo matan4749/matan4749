@@ -65,6 +65,7 @@ export interface JobbotApi {
     learningNotes: string[];
   }>;
   stopRun: () => Promise<boolean>;
+  resolveLoginGate: (action: "continue" | "cancel") => Promise<boolean>;
   getProgress: () => Promise<RunProgress>;
   getLastReport: () => Promise<string>;
   getLearningSnapshot: () => Promise<unknown>;
@@ -95,6 +96,7 @@ const api: JobbotApi = {
   pickDir: () => ipcRenderer.invoke("dialog:pickDir"),
   startRun: (payload) => ipcRenderer.invoke("run:start", payload),
   stopRun: () => ipcRenderer.invoke("run:stop"),
+  resolveLoginGate: (action) => ipcRenderer.invoke("run:loginGate", action),
   getProgress: () => ipcRenderer.invoke("run:progress"),
   getLastReport: () => ipcRenderer.invoke("report:last"),
   getLearningSnapshot: () => ipcRenderer.invoke("learning:snapshot"),

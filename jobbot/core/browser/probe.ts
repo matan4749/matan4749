@@ -152,14 +152,14 @@ export async function probeChromeProfile(
     }
   }
 
-  let context;
+  let launched;
   try {
-    context = await launchChromePersistent({
+    launched = await launchChromePersistent({
       userDataDir: launchPath,
       profileDirectory: profile,
       viewport: { width: 1100, height: 800 },
     });
-    const page = context.pages()[0] ?? (await context.newPage());
+    const page = launched.context.pages()[0] ?? (await launched.context.newPage());
 
     await page.goto("https://www.linkedin.com/feed/", {
       waitUntil: "domcontentloaded",
@@ -190,7 +190,8 @@ export async function probeChromeProfile(
       indeedReachable = false;
     }
 
-    await context.close().catch(() => undefined);
+    await launched.close().catch(() => undefined);
+    launched = undefined;
 
     if (linkedInLoggedIn) {
       return {
@@ -221,7 +222,7 @@ export async function probeChromeProfile(
       detail: `url=${url}`,
     };
   } catch (err) {
-    await context?.close().catch(() => undefined);
+    if (launched) await launched.close().catch(() => undefined);
     const detail = err instanceof Error ? err.message : String(err);
     return {
       ok: false,
@@ -233,7 +234,7 @@ export async function probeChromeProfile(
       indeedReachable: null,
       chromeWasRunning,
       messageHe: isChromeLockError(err) ? CHROME_QUIT_MSG_HE : chromeLaunchErrorHe(err),
-      detail,
+      detail: detail.split("\n")[0]?.slice(0, 200),
     };
   }
 }

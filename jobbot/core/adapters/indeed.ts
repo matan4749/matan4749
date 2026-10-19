@@ -1,7 +1,7 @@
 import type { SiteAdapter } from "./types";
 import { demoApply, demoJobs } from "./demo";
 import { detectApplyConfirmation } from "./confirm";
-import { clickFirst, pickSelector, withBrowserPage } from "../browser/session";
+import { clickFirst, hasBrowserSession, pickSelector, withBrowserPage } from "../browser/session";
 import type { ApplyMethod, ApplyResult, JobListing, SiteAdapterContext, SiteSearchParams } from "../types";
 
 export const indeedAdapter: SiteAdapter = {
@@ -13,8 +13,8 @@ export const indeedAdapter: SiteAdapter = {
   defaultApplyMethod: "cv-upload",
 
   async search(params: SiteSearchParams, ctx: SiteAdapterContext): Promise<JobListing[]> {
-    if (ctx.demo || !ctx.chromeUserDataDir) {
-      ctx.log("info", "Indeed: מצב הדגמה / ללא פרופיל — מחזיר משרות לדוגמה");
+    if (ctx.demo || !hasBrowserSession(ctx)) {
+      ctx.log("info", "Indeed: מצב הדגמה / ללא דפדפן — מחזיר משרות לדוגמה");
       return demoJobs("indeed", params);
     }
 
@@ -80,7 +80,7 @@ export const indeedAdapter: SiteAdapter = {
 
   async apply(job: JobListing, ctx: SiteAdapterContext): Promise<ApplyResult> {
     const method = await this.detectApplyMethod(job, ctx);
-    if (ctx.demo || !ctx.chromeUserDataDir) {
+    if (ctx.demo || !hasBrowserSession(ctx)) {
       return demoApply(job, ctx, method);
     }
 

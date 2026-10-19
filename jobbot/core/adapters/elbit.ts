@@ -1,6 +1,6 @@
 import type { SiteAdapter } from "./types";
 import { demoApply, demoJobs } from "./demo";
-import { clickFirst, pickSelector, withBrowserPage } from "../browser/session";
+import { clickFirst, hasBrowserSession, pickSelector, withBrowserPage } from "../browser/session";
 import type { ApplyMethod, ApplyResult, JobListing, SiteAdapterContext, SiteSearchParams } from "../types";
 
 /** Elbit Systems careers portal — https://elbitsystems.com/careers/ */
@@ -16,7 +16,7 @@ export const elbitAdapter: SiteAdapter = {
   defaultApplyMethod: "cv-upload",
 
   async search(params: SiteSearchParams, ctx: SiteAdapterContext): Promise<JobListing[]> {
-    if (ctx.demo || !ctx.chromeUserDataDir) {
+    if (ctx.demo || !hasBrowserSession(ctx)) {
       ctx.log("info", "אלביט: stub/דמו — פורטל קריירה (התחבר ב-Chrome ואז נחדד סלקטורים)");
       return demoJobs("elbit", params).map((j) => ({
         ...j,
@@ -96,8 +96,8 @@ export const elbitAdapter: SiteAdapter = {
     const method = await this.detectApplyMethod(job, ctx);
     const started = Date.now();
     // Stub until live: never claim a real submit
-    if (ctx.demo || !ctx.chromeUserDataDir || this.status === "stub") {
-      if (ctx.demo || !ctx.chromeUserDataDir) return demoApply(job, ctx, method);
+    if (ctx.demo || !hasBrowserSession(ctx) || this.status === "stub") {
+      if (ctx.demo || !hasBrowserSession(ctx)) return demoApply(job, ctx, method);
       const reason = "לא מיושם עדיין — אדפטר אלביט (stub); לא הוגשה מועמדות";
       ctx.log("warn", `⚠ אלביט: ${reason}`);
       return {

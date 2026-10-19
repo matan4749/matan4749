@@ -43,12 +43,16 @@ export default function App() {
   const [checkingClosed, setCheckingClosed] = useState(false);
 
   const api = window.jobbot;
-  const chromeReady = Boolean(settings?.chromeUserDataDir?.trim());
-  /** Fresh closed-check within last 5 minutes */
+  const browserMode = settings?.browserMode === "live" ? "live" : "jobbot";
+  /** Jobbot profile mode needs no system Chrome path; live mode does */
+  const chromeReady =
+    browserMode === "jobbot" || Boolean(settings?.chromeUserDataDir?.trim());
+  /** Fresh closed-check within last 5 minutes (live mode only) */
   const chromeClosedFresh =
     chromeClosedOk &&
     chromeClosedAt != null &&
     Date.now() - chromeClosedAt < 5 * 60 * 1000;
+  const awaitingLogin = progress.phase === "awaiting-login";
 
   useEffect(() => {
     if (!api) {
@@ -79,6 +83,7 @@ export default function App() {
   const phaseHe = useMemo(() => {
     const map: Record<RunProgress["phase"], string> = {
       idle: "ממתין",
+      "awaiting-login": "המתנה להתחברות…",
       searching: "מחפש…",
       applying: "מגיש…",
       reporting: "מכין דוח…",
@@ -88,6 +93,12 @@ export default function App() {
     };
     return map[progress.phase];
   }, [progress.phase]);
+
+  async function respondLoginGate(action: "continue" | "cancel") {
+    if (!api) return;
+    setStatusMsg(action === "continue" ? "ממשיכים לריצה…" : "מבטל…");
+    await api.resolveLoginGate(action);
+  }
 
   async function persist(next: AppSettings) {
     setSettings(next);
@@ -161,29 +172,36 @@ export default function App() {
       setSelectedKeywords(kws);
     }
 
-    if (!activeSettings.chromeUserDataDir?.trim()) {
+    const modeBrowser = activeSettings.browserMode === "live" ? "live" : "jobbot";
+    if (modeBrowser === "live" && !activeSettings.chromeUserDataDir?.trim()) {
       const msg =
-        "נחסם: אין נתיב Chrome. עבור להגדרות, בחר פרופיל Chrome, ואז «הפעל ריצה» שוב.";
+        "מצב Chrome מערכת — חסר נתיב. עבור להגדרות או חזור למצב «פרופיל Jobbot».";
       setStatusMsg(msg);
       setTab("settings");
       return { ok: false, messageHe: msg };
     }
 
-    setStatusMsg("בודק ש-Chrome סגור…");
-    const safe = await verifyChromeClosed();
-    if (!safe) {
-      const msg =
-        chromeClosedMsg ||
-        "Chrome עדיין פתוח — לחץ Cmd+Q ונסה שוב";
-      setStatusMsg(msg);
-      // Stay/return feedback to chat; also show settings tip
-      setTab("settings");
-      return { ok: false, messageHe: msg };
+    if (modeBrowser === "live") {
+      setStatusMsg("בודק ש-Chrome סגור…");
+      const safe = await verifyChromeClosed();
+      if (!safe) {
+        const msg =
+          chromeClosedMsg || "Chrome עדיין פתוח — לחץ Cmd+Q ונסה שוב";
+        setStatusMsg(msg);
+        setTab("settings");
+        return { ok: false, messageHe: msg };
+      }
     }
 
     setRunning(true);
     setTab("run");
-    setStatusMsg(searchOnly ? "רץ (חיפוש בלבד)…" : "רץ…");
+    setStatusMsg(
+      modeBrowser === "jobbot"
+        ? "פותח Chrome להתחברות…"
+        : searchOnly
+          ? "רץ (חיפוש בלבד)…"
+          : "רץ…",
+    );
     const config: RunConfig = {
       searchMode: mode,
       keywords: mode === "keywords" ? kws : [],
@@ -326,6 +344,52 @@ export default function App() {
   return (
     <>
       <div className="app-bg" />
+      {awaitingLogin && (
+        <div className="login-gate-overlay" role="dialog" aria-modal="true">
+          <div className="login-gate-card">
+            <h2>התחברות לאתרים</h2>
+            <p>
+              {progress.loginGate?.messageHe ||
+                "התחבר לאתרים בחלון Chrome שנפתח. כשסיימת — לחץ המשך"}
+            </p>
+            {progress.loginGate?.sites?.length ? (
+              <ul className="login-gate-sites">
+                {progress.loginGate.sites.map((s) => (
+                  <li key={s.id}>
+                    <span>{s.displayNameHe}</span>
+                    <span className="hint">
+                      {s.loggedIn === true
+                        ? "✓ נראה מחובר"
+                        : s.loggedIn === false
+                          ? "○ נדרשת התחברות"
+                          : "· בדוק בחלון Chrome"}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+            <p className="hint">
+              ההתחברות נשמרת בפרופיל Jobbot — בפעם הבאה לרוב לא תצטרך להתחבר שוב.
+            </p>
+            <div className="cta-row" style={{ justifyContent: "center", marginTop: 16 }}>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => void respondLoginGate("continue")}
+              >
+                המשך לריצה
+              </button>
+              <button
+                type="button"
+                className="btn"
+                onClick={() => void respondLoginGate("cancel")}
+              >
+                ביטול
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       <div className="shell">
         <header className="topnav">
           <div className="brand-mark">JOBBOT</div>
@@ -372,21 +436,29 @@ export default function App() {
                 <button type="button" className="btn btn-primary" onClick={() => setTab("chat")}>
                   פתח צ׳אט
                 </button>
-                <button
-                  type="button"
-                  className="btn"
-                  disabled={checkingClosed || running}
-                  onClick={() => void verifyChromeClosed()}
-                >
-                  {checkingClosed ? "בודק…" : "וודא ש־Chrome סגור"}
-                </button>
+                {browserMode === "live" && (
+                  <button
+                    type="button"
+                    className="btn"
+                    disabled={checkingClosed || running}
+                    onClick={() => void verifyChromeClosed()}
+                  >
+                    {checkingClosed ? "בודק…" : "וודא ש־Chrome סגור"}
+                  </button>
+                )}
                 <button
                   type="button"
                   className="btn"
                   onClick={() => void startRun()}
-                  disabled={running || checkingClosed}
+                  disabled={running || (browserMode === "live" && checkingClosed)}
                 >
-                  {running ? "רץ…" : chromeReady ? "התחל ריצה אמיתית" : "הגדר Chrome קודם"}
+                  {running
+                    ? awaitingLogin
+                      ? "ממתין להתחברות…"
+                      : "רץ…"
+                    : chromeReady
+                      ? "התחל ריצה"
+                      : "הגדר דפדפן"}
                 </button>
                 <button type="button" className="btn" onClick={() => setTab("settings")}>
                   הגדרות
@@ -565,110 +637,122 @@ export default function App() {
 
                 <div className="panel" style={{ marginBottom: 16, padding: 14 }}>
                   <h3 style={{ fontFamily: "var(--font-display)", margin: "0 0 8px" }}>
-                    הגשות אמיתיות — Chrome
+                    איך זה עובד — Chrome
                   </h3>
                   <ol className="hint" style={{ margin: 0, paddingInlineStart: 18, lineHeight: 1.7 }}>
                     <li>
-                      <strong>Jobbot יפתח את Chrome שלך עם הפרופיל המחובר</strong> — חובה{" "}
-                      <strong>Cmd+Q</strong> לפני ריצה (לא רק לסגור חלון).
+                      <strong>ברירת מחדל:</strong> Jobbot פותח Chrome עם{" "}
+                      <em>פרופיל Jobbot קבוע</em> (לא מעתיק את Chrome שלך).
                     </li>
                     <li>
-                      נתיב: תיקיית <strong>Google/Chrome</strong> (בלי /Default) —
-                      <br />
-                      <code>
-                        {chromeHint ||
-                          "/Users/matan_amar/Library/Application Support/Google/Chrome"}
-                      </code>
+                      בתחילת כל ריצה נפתח חלון — <strong>התחבר ידנית</strong> ללינקדאין / אינדיד /
+                      וכו׳, ואז לחץ «המשך לריצה».
                     </li>
                     <li>
-                      התחבר ל־LinkedIn ו־Indeed ב-Chrome הרגיל שלך לפני הריצה הראשונה.
-                    </li>
-                    <li>
-                      אם מופיע EPERM: הגדרות מערכת → פרטיות ואבטחה → Full Disk Access → הפעל
-                      Jobbot → הפעל מחדש.
-                    </li>
-                    <li>
-                      אם נפתח מסך התחברות ריק ללינקדאין — Jobbot עוצר. אל תמשיך להגיש; תקן נתיב /
-                      Cmd+Q / Full Disk Access.
+                      ההתחברות נשמרת בפרופיל Jobbot — בפעם הבאה לרוב לא צריך להתחבר שוב. אפשר
+                      להשאיר את Chrome הרגיל פתוח.
                     </li>
                   </ol>
                 </div>
 
                 <div className="field">
-                  <label>תיקיית Chrome (user-data-dir)</label>
-                  <div className="row">
-                    <input
-                      value={settings.chromeUserDataDir}
-                      onChange={(e) =>
-                        setSettings({ ...settings, chromeUserDataDir: e.target.value })
+                  <label>מצב דפדפן</label>
+                  <div className="cta-row" style={{ marginTop: 8 }}>
+                    <button
+                      type="button"
+                      className={
+                        settings.browserMode !== "live" ? "btn btn-primary" : "btn"
                       }
-                      placeholder={
-                        chromeHint ||
-                        "/Users/matan_amar/Library/Application Support/Google/Chrome"
+                      onClick={() =>
+                        setSettings({ ...settings, browserMode: "jobbot" })
                       }
-                    />
-                    <button type="button" className="btn" onClick={() => void pickChrome()}>
-                      בחר תיקיית Chrome
+                    >
+                      פרופיל Jobbot (מומלץ)
+                    </button>
+                    <button
+                      type="button"
+                      className={
+                        settings.browserMode === "live" ? "btn btn-primary" : "btn"
+                      }
+                      onClick={() =>
+                        setSettings({ ...settings, browserMode: "live" })
+                      }
+                    >
+                      Chrome מערכת (מתקדם)
                     </button>
                   </div>
                   <p className="hint">
-                    ברירת מחדל: פרופיל חי. הנתיב חייב להסתיים ב־Google/Chrome (בלי /Default).
+                    {settings.browserMode === "live"
+                      ? "מצב מתקדם: משתמש בפרופיל Chrome שלך — חובה Cmd+Q לפני ריצה."
+                      : "מצב רגיל: פרופיל נפרד + שער התחברות ידני. לא צריך לסגור את Chrome."}
                   </p>
-                  <label className="row" style={{ marginTop: 10, gap: 8, alignItems: "center" }}>
-                    <input
-                      type="checkbox"
-                      checked={Boolean(settings.useChromeClone)}
-                      onChange={(e) =>
-                        setSettings({ ...settings, useChromeClone: e.target.checked })
-                      }
-                    />
-                    <span>השתמש בעותק / אפשר Chrome פתוח</span>
-                  </label>
-                  <p className="hint">
-                    כבוי (מומלץ): פרופיל חי אחרי Cmd+Q. דלוק: סנכרון עותק עם Cookies — אם העותק
-                    ריק, Jobbot עוצר ולא ממשיך עם פרופיל ריק.
-                  </p>
-                  <div className="cta-row" style={{ marginTop: 8 }}>
-                    <button type="button" className="btn" onClick={() => void useChromeHint()}>
-                      מלא נתיב Mac ברירת מחדל
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn-primary"
-                      disabled={checkingClosed || running}
-                      onClick={() => void verifyChromeClosed()}
+                </div>
+
+                {settings.browserMode === "live" && (
+                  <div className="field">
+                    <label>תיקיית Chrome מערכת (user-data-dir)</label>
+                    <div className="row">
+                      <input
+                        value={settings.chromeUserDataDir}
+                        onChange={(e) =>
+                          setSettings({ ...settings, chromeUserDataDir: e.target.value })
+                        }
+                        placeholder={
+                          chromeHint ||
+                          "/Users/matan_amar/Library/Application Support/Google/Chrome"
+                        }
+                      />
+                      <button type="button" className="btn" onClick={() => void pickChrome()}>
+                        בחר תיקיית Chrome
+                      </button>
+                    </div>
+                    <label
+                      className="row"
+                      style={{ marginTop: 10, gap: 8, alignItems: "center" }}
                     >
-                      {checkingClosed ? "בודק…" : "וודא ש־Chrome סגור"}
-                    </button>
-                    <button
-                      type="button"
-                      className="btn"
-                      disabled={probing || !settings.chromeUserDataDir.trim()}
-                      onClick={() => void probeChrome(false)}
-                    >
-                      {probing ? "בודק…" : "בדיקת חיבור Chrome"}
-                    </button>
-                    {settings.useChromeClone && (
+                      <input
+                        type="checkbox"
+                        checked={Boolean(settings.useChromeClone)}
+                        onChange={(e) =>
+                          setSettings({ ...settings, useChromeClone: e.target.checked })
+                        }
+                      />
+                      <span>השתמש בעותק / אפשר Chrome פתוח</span>
+                    </label>
+                    <div className="cta-row" style={{ marginTop: 8 }}>
+                      <button type="button" className="btn" onClick={() => void useChromeHint()}>
+                        מלא נתיב Mac ברירת מחדל
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-primary"
+                        disabled={checkingClosed || running}
+                        onClick={() => void verifyChromeClosed()}
+                      >
+                        {checkingClosed ? "בודק…" : "וודא ש־Chrome סגור"}
+                      </button>
                       <button
                         type="button"
                         className="btn"
                         disabled={probing || !settings.chromeUserDataDir.trim()}
-                        onClick={() => void probeChrome(true)}
+                        onClick={() => void probeChrome(false)}
                       >
-                        רענון עותק פרופיל
+                        {probing ? "בודק…" : "בדיקת חיבור Chrome"}
                       </button>
+                    </div>
+                    {chromeClosedMsg && (
+                      <p
+                        className="hint"
+                        style={{
+                          color: chromeClosedOk ? "var(--ok, #6bcf8e)" : "var(--danger)",
+                        }}
+                      >
+                        {chromeClosedMsg}
+                      </p>
                     )}
+                    {chromeProbeMsg && <p className="hint">{chromeProbeMsg}</p>}
                   </div>
-                  {chromeClosedMsg && (
-                    <p
-                      className="hint"
-                      style={{ color: chromeClosedOk ? "var(--ok, #6bcf8e)" : "var(--danger)" }}
-                    >
-                      {chromeClosedMsg}
-                    </p>
-                  )}
-                  {chromeProbeMsg && <p className="hint">{chromeProbeMsg}</p>}
-                </div>
+                )}
 
                 <div className="field">
                   <label>מייל לקבלת דוח (שליחה מובנית באפליקציה)</label>

@@ -1,5 +1,5 @@
 #!/bin/bash
-# מעתיק לוגים של Jobbot לשולחן העבודה כ-zip לשליחה לצוות
+# ייצוא קל — בלי פרופיל דפדפן (zip קטן לשליחה)
 set -euo pipefail
 export PATH="/usr/local/bin:/opt/homebrew/bin:$PATH"
 
@@ -9,91 +9,145 @@ OUT_ZIP="${HOME}/Desktop/Jobbot-logs-${STAMP}.zip"
 
 echo ""
 echo "══════════════════════════════════════"
-echo "  Jobbot — מעתיק לוגים…"
+echo "  Jobbot — ייצוא קל (בלי פרופיל דפדפן)"
 echo "══════════════════════════════════════"
 echo ""
 
 rm -rf "$OUT_DIR"
-mkdir -p "$OUT_DIR"
+mkdir -p "$OUT_DIR/Library-Logs" "$OUT_DIR/meta" "$OUT_DIR/DiagnosticReports"
 
-copy_tree() {
+copy_file() {
   local src="$1"
-  local name="$2"
-  if [[ -e "$src" ]]; then
-    echo "✓ $src"
-    mkdir -p "$OUT_DIR/$name"
-    # Skip huge Chrome profile caches; keep settings/runs/outbox/knowledge/chat
-    rsync -a --exclude 'browser-profile/Default/Cache' \
-      --exclude 'browser-profile/Default/Code Cache' \
-      --exclude 'browser-profile/Default/GPUCache' \
-      --exclude 'browser-profile/*/Cache' \
-      --exclude 'chrome-clone/*/Cache' \
-      --exclude 'BrowserMetrics*' \
-      "$src/" "$OUT_DIR/$name/" 2>/dev/null \
-      || cp -R "$src/." "$OUT_DIR/$name/" 2>/dev/null || true
-  else
-    echo "· חסר: $src"
-    echo "(missing) $src" >> "$OUT_DIR/MISSING.txt"
+  local dest="$2"
+  local max_bytes="${3:-2097152}"
+  if [[ ! -f "$src" ]]; then
+    return 1
   fi
+  local sz
+  sz=$(wc -c < "$src" | tr -d ' ')
+  mkdir -p "$(dirname "$dest")"
+  if [[ "$sz" -gt "$max_bytes" ]]; then
+    echo "(truncated $(basename "$src") ${sz}B)" > "${dest}.TRUNCATED.txt"
+    head -c 102400 "$src" > "${dest}.head.txt" 2>/dev/null || true
+    echo "· גדול מדי, נחתך: $(basename "$src") ($sz)"
+    return 0
+  fi
+  cp "$src" "$dest"
+  echo "✓ $(basename "$src")"
+  return 0
 }
 
-# Electron userData (dev npm start uses "jobbot"; packaged may use "Jobbot")
-copy_tree "${HOME}/Library/Application Support/jobbot/jobbot-data" "AppSupport-jobbot"
-copy_tree "${HOME}/Library/Application Support/Jobbot/jobbot-data" "AppSupport-Jobbot"
+FOUND_DATA=0
+for DATA in \
+  "${HOME}/Library/Application Support/jobbot/jobbot-data" \
+  "${HOME}/Library/Application Support/Jobbot/jobbot-data"
+do
+  [[ -d "$DATA" ]] || continue
+  FOUND_DATA=1
+  TAG=$(basename "$(dirname "$DATA")")
+  DEST="$OUT_DIR/data-${TAG}"
+  mkdir -p "$DEST/runs" "$DEST/outbox" "$DEST/knowledge"
+  echo "— מקור: $DATA"
 
-# Launcher + crash reports
-mkdir -p "$OUT_DIR/Library-Logs"
-[[ -f "${HOME}/Library/Logs/Jobbot-launcher.log" ]] \
-  && cp "${HOME}/Library/Logs/Jobbot-launcher.log" "$OUT_DIR/Library-Logs/" \
-  && echo "✓ Jobbot-launcher.log" \
-  || echo "· אין Jobbot-launcher.log"
+  copy_file "$DATA/settings.json" "$DEST/settings.json" 512000 || true
+  copy_file "$DATA/chat.json" "$DEST/chat.json" 2097152 || true
 
-# Recent DiagnosticReports mentioning Jobbot/Electron (names only + copy small ones)
-mkdir -p "$OUT_DIR/DiagnosticReports"
-shopt -s nullglob
-for f in "${HOME}/Library/Logs/DiagnosticReports/"Jobbot* \
-         "${HOME}/Library/Logs/DiagnosticReports/"Electron* \
-         "${HOME}/Library/Logs/DiagnosticReports/"הפעל*; do
-  [[ -f "$f" ]] || continue
-  # skip huge .ips.gz if > 5MB
-  sz=$(wc -c < "$f" | tr -d ' ')
-  if [[ "$sz" -lt 5000000 ]]; then
-    cp "$f" "$OUT_DIR/DiagnosticReports/" && echo "✓ $(basename "$f")"
-  else
-    echo "skip large $(basename "$f") ($sz)" >> "$OUT_DIR/DiagnosticReports/SKIPPED.txt"
+  if [[ -d "$DATA/runs" ]]; then
+    copy_file "$DATA/runs/latest.json" "$DEST/runs/latest.json" 2097152 || true
+    for f in "$DATA/runs"/run-*.json; do
+      [[ -f "$f" ]] || continue
+      copy_file "$f" "$DEST/runs/$(basename "$f")" 2097152 || true
+    done
+    # newest 3 HTML reports (cap 2MB each)
+    ls -t "$DATA/runs"/report-*.html 2>/dev/null | head -3 | while read -r f; do
+      [[ -f "$f" ]] || continue
+      copy_file "$f" "$DEST/runs/$(basename "$f")" 2097152 || true
+    done
   fi
-done
-shopt -u nullglob
 
-# Source checkout tip
-if [[ -d "${HOME}/Desktop/Jobbot-src/jobbot" ]]; then
-  echo "Jobbot-src present on Desktop" > "$OUT_DIR/SOURCE.txt"
-  git -C "${HOME}/Desktop/Jobbot-src" rev-parse --short HEAD 2>/dev/null >> "$OUT_DIR/SOURCE.txt" || true
-  git -C "${HOME}/Desktop/Jobbot-src" branch --show-current 2>/dev/null >> "$OUT_DIR/SOURCE.txt" || true
+  if [[ -d "$DATA/outbox" ]]; then
+    ls -la "$DATA/outbox" > "$DEST/outbox/LISTING.txt" 2>/dev/null || true
+    ls -t "$DATA/outbox"/*.html 2>/dev/null | head -2 | while read -r f; do
+      [[ -f "$f" ]] || continue
+      copy_file "$f" "$DEST/outbox/$(basename "$f")" 2097152 || true
+    done
+  fi
+
+  if [[ -d "$DATA/knowledge" ]]; then
+    for f in "$DATA/knowledge"/*; do
+      [[ -f "$f" ]] || continue
+      copy_file "$f" "$DEST/knowledge/$(basename "$f")" 1048576 || true
+    done
+  fi
+
+  cat > "$DEST/EXCLUSIONS.txt" <<'EX'
+EXCLUDED (ייצוא קל — בלי פרופיל דפדפן):
+- browser-profile/
+- chrome-clone/
+- node_modules / *.app / Cache / GPUCache
+- HTML reports over 2MB (truncated)
+EX
+done
+
+if [[ "$FOUND_DATA" -eq 0 ]]; then
+  echo "· לא נמצא jobbot-data"
+  echo "missing jobbot-data under Application Support" > "$OUT_DIR/MISSING-DATA.txt"
 fi
 
-# Manifest
+if [[ -f "${HOME}/Library/Logs/Jobbot-launcher.log" ]]; then
+  tail -n 200 "${HOME}/Library/Logs/Jobbot-launcher.log" \
+    > "$OUT_DIR/Library-Logs/Jobbot-launcher.tail200.log"
+  echo "✓ Jobbot-launcher.log (200 שורות אחרונות)"
+fi
+
+for f in "${HOME}/Library/Logs"/Jobbot*.log "${HOME}/Library/Logs"/jobbot*.log; do
+  [[ -f "$f" ]] || continue
+  base=$(basename "$f")
+  [[ "$base" == "Jobbot-launcher.log" ]] && continue
+  tail -n 200 "$f" > "$OUT_DIR/Library-Logs/${base}.tail200.log" || true
+done
+
+ls -lt "${HOME}/Library/Logs/DiagnosticReports/" 2>/dev/null \
+  | grep -iE 'Jobbot|Electron|הפעל' \
+  | head -20 > "$OUT_DIR/DiagnosticReports/NAMES.txt" 2>/dev/null \
+  || echo "(none)" > "$OUT_DIR/DiagnosticReports/NAMES.txt"
+
 {
   echo "created=$STAMP"
-  echo "host=$(hostname 2>/dev/null || true)"
-  echo "user=$USER"
+  echo "note=ייצוא קל — בלי פרופיל דפדפן"
   uname -a 2>/dev/null || true
   sw_vers 2>/dev/null || true
   node -v 2>/dev/null || echo "node=missing"
-} > "$OUT_DIR/SYSTEM.txt"
+  npm -v 2>/dev/null || true
+  if [[ -d "${HOME}/Desktop/Jobbot-src/.git" ]]; then
+    echo "src=${HOME}/Desktop/Jobbot-src"
+    git -C "${HOME}/Desktop/Jobbot-src" rev-parse HEAD 2>/dev/null || true
+    git -C "${HOME}/Desktop/Jobbot-src" branch --show-current 2>/dev/null || true
+    git -C "${HOME}/Desktop/Jobbot-src" log -1 --oneline 2>/dev/null || true
+  fi
+  if [[ -f "${HOME}/Desktop/Jobbot-src/jobbot/package.json" ]]; then
+    echo "--- package.json (head) ---"
+    head -20 "${HOME}/Desktop/Jobbot-src/jobbot/package.json"
+  fi
+} > "$OUT_DIR/meta/SYSTEM.txt"
 
 cd "$(dirname "$OUT_DIR")"
 rm -f "$OUT_ZIP"
 zip -r -q "$OUT_ZIP" "$(basename "$OUT_DIR")"
 rm -rf "$OUT_DIR"
 
+SIZE=$(wc -c < "$OUT_ZIP" | tr -d ' ')
 echo ""
-echo "✅ מוכן לשליחה:"
+echo "✅ מוכן לשליחה — ייצוא קל (בלי פרופיל דפדפן):"
 echo "   $OUT_ZIP"
+echo "   גודל: ${SIZE} בתים"
+if [[ "$SIZE" -gt 5242880 ]]; then
+  echo "⚠ עדיין מעל 5MB — שלח ידנית את runs/latest.json"
+fi
 echo ""
-echo "שלח את הקובץ הזה לצ׳אט / למייל."
+
 if command -v osascript >/dev/null 2>&1; then
-  osascript -e "display dialog \"הלוגים מוכנים על שולחן העבודה:\\n$OUT_ZIP\" buttons {\"OK\"} default button 1 with title \"Jobbot\"" >/dev/null 2>&1 || true
+  osascript -e "display dialog \"ייצוא קל מוכן (בלי פרופיל דפדפן):\\n$OUT_ZIP\\n(${SIZE} בתים)\" buttons {\"OK\"} default button 1 with title \"Jobbot\"" >/dev/null 2>&1 || true
   open -R "$OUT_ZIP" 2>/dev/null || true
 fi
 if [[ -t 0 ]]; then

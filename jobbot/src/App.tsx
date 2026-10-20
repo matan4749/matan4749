@@ -41,6 +41,9 @@ export default function App() {
   const [chromeClosedOk, setChromeClosedOk] = useState(false);
   const [chromeClosedAt, setChromeClosedAt] = useState<number | null>(null);
   const [checkingClosed, setCheckingClosed] = useState(false);
+  const [appVersion, setAppVersion] = useState("0.2.0");
+  const [jobbotProfilePath, setJobbotProfilePath] = useState("");
+  const [clearingProfile, setClearingProfile] = useState(false);
 
   const api = window.jobbot;
   const browserMode = settings?.browserMode === "live" ? "live" : "jobbot";
@@ -68,6 +71,16 @@ export default function App() {
         setChromeHint(await api.getChromeHint());
       } catch {
         /* keep default */
+      }
+      try {
+        if (api.getAppVersion) setAppVersion(await api.getAppVersion());
+      } catch {
+        /* keep default */
+      }
+      try {
+        if (api.getJobbotProfilePath) setJobbotProfilePath(await api.getJobbotProfilePath());
+      } catch {
+        /* optional */
       }
       const unsub = api.onProgress(setProgress);
       return unsub;
@@ -197,7 +210,7 @@ export default function App() {
     setTab("run");
     setStatusMsg(
       modeBrowser === "jobbot"
-        ? "פותח Chrome להתחברות…"
+        ? "פותח Chrome — בודק אם כבר מחובר…"
         : searchOnly
           ? "רץ (חיפוש בלבד)…"
           : "רץ…",
@@ -373,7 +386,7 @@ export default function App() {
               </ul>
             ) : null}
             <p className="hint">
-              ההתחברות נשמרת בפרופיל Jobbot — בפעם הבאה לרוב לא תצטרך להתחבר שוב.
+              אם כבר מחובר בריצה הבאה — Jobbot ידלג על השער וימשיך ישר לחיפוש.
             </p>
             <div className="cta-row" style={{ justifyContent: "center", marginTop: 16 }}>
               <button
@@ -398,7 +411,9 @@ export default function App() {
       )}
       <div className="shell">
         <header className="topnav">
-          <div className="brand-mark">JOBBOT</div>
+          <div className="brand-mark">
+            JOBBOT <span className="hint" style={{ fontSize: 12 }}>v{appVersion}</span>
+          </div>
           <nav className="nav-tabs">
             {(
               [
@@ -651,12 +666,12 @@ export default function App() {
                       <em>פרופיל Jobbot קבוע</em> (לא מעתיק את Chrome שלך).
                     </li>
                     <li>
-                      בתחילת כל ריצה נפתח חלון — <strong>התחבר ידנית</strong> ללינקדאין / אינדיד /
-                      וכו׳, ואז לחץ «המשך לריצה».
+                      בריצה הראשונה: התחבר בחלון Chrome, ואז «המשך לריצה» — הסשן נשמר בפרופיל
+                      Jobbot.
                     </li>
                     <li>
-                      ההתחברות נשמרת בפרופיל Jobbot — בפעם הבאה לרוב לא צריך להתחבר שוב. אפשר
-                      להשאיר את Chrome הרגיל פתוח.
+                      בריצות הבאות: אם מחובר ללינקדאין — <strong>מדלגים על שער ההתחברות</strong>{" "}
+                      ומתחילים חיפוש מיד. אפשר להשאיר את Chrome הרגיל פתוח.
                     </li>
                   </ol>
                 </div>
@@ -690,9 +705,46 @@ export default function App() {
                   <p className="hint">
                     {settings.browserMode === "live"
                       ? "מצב מתקדם: משתמש בפרופיל Chrome שלך — חובה Cmd+Q לפני ריצה."
-                      : "מצב רגיל: פרופיל נפרד + שער התחברות ידני. לא צריך לסגור את Chrome."}
+                      : "מצב רגיל: פרופיל Jobbot קבוע. שער התחברות רק אם לא מחובר — אחרת מדלגים."}
                   </p>
                 </div>
+
+                {settings.browserMode !== "live" && (
+                  <div className="field">
+                    <label>פרופיל Jobbot</label>
+                    <p className="hint" style={{ wordBreak: "break-all" }}>
+                      {jobbotProfilePath || "…/jobbot-data/browser-profile"}
+                    </p>
+                    <button
+                      type="button"
+                      className="btn"
+                      disabled={clearingProfile || running}
+                      onClick={() => {
+                        if (
+                          !api?.clearJobbotProfile ||
+                          !window.confirm(
+                            "לנקות את פרופיל Jobbot? תצטרך להתחבר מחדש בריצה הבאה.",
+                          )
+                        ) {
+                          return;
+                        }
+                        setClearingProfile(true);
+                        void api
+                          .clearJobbotProfile()
+                          .then((r) => {
+                            setStatusMsg(r.messageHe);
+                            if (r.path) setJobbotProfilePath(r.path);
+                          })
+                          .finally(() => setClearingProfile(false));
+                      }}
+                    >
+                      {clearingProfile ? "מנקה…" : "נקה פרופיל Jobbot"}
+                    </button>
+                    <p className="hint">
+                      רק בלחיצה מפורשת — Jobbot לעולם לא מוחק את הפרופיל אוטומטית בתחילת ריצה.
+                    </p>
+                  </div>
+                )}
 
                 {settings.browserMode === "live" && (
                   <div className="field">

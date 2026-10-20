@@ -1,6 +1,6 @@
 {
   "name": "jobbot",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Jobbot — אוטומציית חיפוש והגשת משרות מקומית עבור מתן עמר",
   "main": "dist-electron/main.js",
   "author": "Matan Amar",
@@ -13,7 +13,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.electron.json --noEmit",
     "demo": "JOBBOT_DEMO=1 vite",
     "demo:run": "JOBBOT_DEMO=1 tsx scripts/demo-run.ts",
-    "test": "tsx --test core/adapters/reliability.test.ts core/adapters/board-apply.test.ts core/adapters/linkedin-blocker.test.ts core/browser/chrome-lock.test.ts core/browser/chrome-paths.test.ts core/browser/launch-chrome.test.ts core/browser/profile-clone.test.ts core/runner/demo-smoke.test.ts core/runner/job-limit.test.ts core/learning/engine.test.ts core/chat/parse-intent.test.ts",
+    "test": "tsx --test core/adapters/reliability.test.ts core/adapters/board-apply.test.ts core/adapters/linkedin-blocker.test.ts core/browser/chrome-lock.test.ts core/browser/chrome-paths.test.ts core/browser/launch-chrome.test.ts core/browser/login-gate.test.ts core/browser/profile-clone.test.ts core/runner/demo-smoke.test.ts core/runner/job-limit.test.ts core/learning/engine.test.ts core/chat/parse-intent.test.ts",
     "start": "electron .",
     "dist": "npm run build && electron-builder --publish never",
     "dist:win": "npm run build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --win zip portable nsis --x64 --publish never",

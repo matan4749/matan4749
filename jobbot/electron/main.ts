@@ -13,6 +13,7 @@ import {
   probeChromeProfile,
 } from "../core/browser/probe";
 import { checkChromeClosed } from "../core/browser/chrome-lock";
+import { clearJobbotBrowserProfile, jobbotBrowserProfileRoot } from "../core/browser/jobbot-profile";
 import { resolveAssistantTurn, llmConfigured } from "../core/chat/llm";
 import { loadChatState, saveChatState } from "../core/chat/store";
 import type { ChatMessage, RunPlan } from "../core/chat/types";
@@ -233,7 +234,16 @@ function registerIpc(): void {
 
   ipcMain.handle("app:dataDir", () => dataDir());
 
+  ipcMain.handle("app:version", () => app.getVersion() || "0.2.0");
+
   ipcMain.handle("app:isPackaged", () => app.isPackaged);
+
+  ipcMain.handle("jobbot:clearProfile", () => {
+    // Explicit Settings action only — never automatic
+    return clearJobbotBrowserProfile(dataDir());
+  });
+
+  ipcMain.handle("jobbot:profilePath", () => jobbotBrowserProfileRoot(dataDir()));
 
   ipcMain.handle("chat:get", () => {
     const state = loadChatState(dataDir());

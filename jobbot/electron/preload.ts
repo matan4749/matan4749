@@ -71,6 +71,9 @@ export interface JobbotApi {
   getLearningSnapshot: () => Promise<unknown>;
   openPath: (p: string) => Promise<string>;
   getDataDir: () => Promise<string>;
+  getAppVersion: () => Promise<string>;
+  clearJobbotProfile: () => Promise<{ ok: boolean; path: string; messageHe: string }>;
+  getJobbotProfilePath: () => Promise<string>;
   getChromeHint: () => Promise<string>;
   probeChrome: (
     chromeUserDataDir: string,
@@ -102,6 +105,9 @@ const api: JobbotApi = {
   getLearningSnapshot: () => ipcRenderer.invoke("learning:snapshot"),
   openPath: (p) => ipcRenderer.invoke("shell:openPath", p),
   getDataDir: () => ipcRenderer.invoke("app:dataDir"),
+  getAppVersion: () => ipcRenderer.invoke("app:version"),
+  clearJobbotProfile: () => ipcRenderer.invoke("jobbot:clearProfile"),
+  getJobbotProfilePath: () => ipcRenderer.invoke("jobbot:profilePath"),
   getChromeHint: () => ipcRenderer.invoke("chrome:defaultHint"),
   probeChrome: (chromeUserDataDir, opts) =>
     ipcRenderer.invoke("chrome:probe", chromeUserDataDir, opts),

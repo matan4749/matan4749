@@ -12,7 +12,13 @@ import {
 } from "../browser/chrome-paths";
 import { jobbotBrowserProfileRoot } from "../browser/jobbot-profile";
 import { launchChromePersistent, type LaunchedChrome } from "../browser/launch-chrome";
-import { openLoginGatePages } from "../browser/login-gate";
+import {
+  COOKIES_NOT_SAVED_HE,
+  LOGGED_IN_SKIP_HE,
+  openLoginGatePages,
+  shouldSkipLoginGate,
+  verifyCookiesPersisted,
+} from "../browser/login-gate";
 import { ensureJobbotChromeProfile, jobbotCloneRoot } from "../browser/profile-clone";
 import { assertChromeSessionArtifacts } from "../browser/session-artifacts";
 import {
@@ -184,49 +190,103 @@ export class JobRunner {
           userDataDir: profilePath,
           profileDirectory: chromeProfileDirectory,
           log: (m) => this.log("info", m),
+          // Jobbot dedicated profile — Matan's normal Chrome may stay open
+          allowWhileChromeRunning: browserMode === "jobbot",
         });
 
-        // Manual login gate — open site tabs, wait for Matan
         const gateSites = adapters.map((a) => ({
           id: a.id,
           displayNameHe: a.displayNameHe,
         }));
-        const statuses = await openLoginGatePages(sharedBrowser, gateSites, (m) =>
-          this.log("info", m),
-        );
-        this.patch({
-          phase: "awaiting-login",
-          loginGate: {
-            sites: statuses,
-            messageHe:
-              "התחבר לאתרים בחלון Chrome שנפתח. כשסיימת — לחץ «המשך לריצה». ההתחברות נשמרת לפעם הבאה.",
-          },
-        });
-        this.log("info", "ממתין להתחברות ידנית… («המשך לריצה» / «ביטול»)");
+        const enabledIds = adapters.map((a) => a.id);
 
-        const gateAction = await this.waitForLoginGate(signal);
-        this.patch({ loginGate: undefined });
-        if (gateAction !== "continue" || signal.aborted) {
-          this.log("warn", "הריצה בוטלה בשער ההתחברות");
-          await sharedBrowser.close().catch(() => undefined);
-          sharedBrowser = undefined;
+        // Fast probe: LinkedIn first — if already logged in, skip the gate entirely
+        let statuses = await openLoginGatePages(
+          sharedBrowser,
+          gateSites,
+          (m) => this.log("info", m),
+          { probeOnlyPrimary: true },
+        );
+
+        if (shouldSkipLoginGate(statuses, enabledIds)) {
+          this.log("info", LOGGED_IN_SKIP_HE);
+          this.patch({ phase: "searching", loginGate: undefined });
+        } else {
+          // Need login — open all enabled site tabs for Matan
+          this.log("info", "נדרשת התחברות — פותח לשוניות לאתרים…");
+          statuses = await openLoginGatePages(sharedBrowser, gateSites, (m) =>
+            this.log("info", m),
+          );
           this.patch({
-            phase: signal.aborted ? "stopped" : "stopped",
-            finishedAt: new Date().toISOString(),
+            phase: "awaiting-login",
+            loginGate: {
+              sites: statuses,
+              messageHe:
+                "התחבר לאתרים בחלון Chrome שנפתח. כשסיימת — לחץ «המשך לריצה». ההתחברות נשמרת בפרופיל Jobbot לפעם הבאה (בלי שער אם כבר מחובר).",
+            },
           });
-          const reportHtml = buildReportHtml({
-            userName: "מתן עמר",
-            progress: this.progress,
-            results: [],
-          });
-          return {
-            progress: this.getProgress(),
-            reportHtml,
-            email: { ok: false, previewOnly: true, error: "LOGIN_GATE_CANCELLED" },
-            learningNotes: ["בוטל בשער התחברות"],
-          };
+          this.log("info", "ממתין להתחברות ידנית… («המשך לריצה» / «ביטול»)");
+
+          const gateAction = await this.waitForLoginGate(signal);
+          this.patch({ loginGate: undefined });
+          if (gateAction !== "continue" || signal.aborted) {
+            this.log("warn", "הריצה בוטלה בשער ההתחברות");
+            await sharedBrowser.close().catch(() => undefined);
+            sharedBrowser = undefined;
+            this.patch({
+              phase: "stopped",
+              finishedAt: new Date().toISOString(),
+            });
+            const reportHtml = buildReportHtml({
+              userName: "מתן עמר",
+              progress: this.progress,
+              results: [],
+            });
+            return {
+              progress: this.getProgress(),
+              reportHtml,
+              email: { ok: false, previewOnly: true, error: "LOGIN_GATE_CANCELLED" },
+              learningNotes: ["בוטל בשער התחברות"],
+            };
+          }
+
+          // Give Chrome a moment to flush cookies to the Jobbot profile
+          await new Promise((r) => setTimeout(r, 1500));
+          const cookieCheck = verifyCookiesPersisted(profilePath, chromeProfileDirectory);
+          if (!cookieCheck.ok && browserMode === "jobbot") {
+            this.log("error", cookieCheck.messageHe || COOKIES_NOT_SAVED_HE);
+            await sharedBrowser.close().catch(() => undefined);
+            sharedBrowser = undefined;
+            this.patch({ phase: "error", finishedAt: new Date().toISOString() });
+            return earlyError(
+              this,
+              cookieCheck.messageHe || COOKIES_NOT_SAVED_HE,
+              "COOKIES_NOT_SAVED",
+            );
+          }
+          this.log(
+            "info",
+            cookieCheck.ok
+              ? `המשתמש אישר התחברות — ${cookieCheck.messageHe}`
+              : "המשתמש אישר התחברות — ממשיכים לחיפוש/הגשה באותו חלון Chrome",
+          );
+
+          // Re-probe LinkedIn after continue — warn if still on login wall
+          const after = await openLoginGatePages(
+            sharedBrowser,
+            gateSites.filter((s) => s.id === "linkedin").length
+              ? gateSites.filter((s) => s.id === "linkedin")
+              : gateSites.slice(0, 1),
+            (m) => this.log("info", m),
+          );
+          const stillWall = after.some((s) => s.loggedIn === false);
+          if (stillWall) {
+            this.log(
+              "warn",
+              "עדיין נראה מסך התחברות אחרי «המשך» — ההגשות עלולות להיכשל. התחבר ושמור סשן בפרופיל Jobbot.",
+            );
+          }
         }
-        this.log("info", "המשתמש אישר התחברות — ממשיכים לחיפוש/הגשה באותו חלון Chrome");
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         this.log("error", isChromeLockError(err) ? CHROME_QUIT_MSG_HE : msg.split("\n")[0] || msg);
@@ -281,6 +341,7 @@ export class JobRunner {
           userDataDir: profilePath,
           profileDirectory: chromeProfileDirectory,
           log: (m) => this.log("info", m),
+          allowWhileChromeRunning: browserMode === "jobbot",
         });
         const gateSites = adapters.map((a) => ({
           id: a.id,
@@ -289,6 +350,11 @@ export class JobRunner {
         const statuses = await openLoginGatePages(sharedBrowser, gateSites, (m) =>
           this.log("info", m),
         );
+        // After browser death: if LinkedIn already logged in again, skip second gate
+        if (shouldSkipLoginGate(statuses, adapters.map((a) => a.id))) {
+          this.log("info", LOGGED_IN_SKIP_HE);
+          return true;
+        }
         this.patch({
           phase: "awaiting-login",
           loginGate: {

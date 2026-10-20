@@ -40,6 +40,11 @@ export interface LaunchChromePersistentOpts {
   log?: (message: string) => void;
   /** Total wait for CDP (ms). Default 45000 — prefer fail-fast over 180s hang. */
   connectTimeoutMs?: number;
+  /**
+   * Jobbot dedicated profile: allow system Chrome to stay open.
+   * Still scrubs orphan Singleton* on THIS user-data-dir only.
+   */
+  allowWhileChromeRunning?: boolean;
 }
 
 export interface LaunchedChrome {
@@ -158,23 +163,29 @@ export function scrubOrphanSingletonLocks(
 }
 
 /**
- * Preflight before opening Matan's profile:
- * - refuse if Chrome still running
- * - scrub orphan Singleton* locks
+ * Preflight before opening a Chrome profile:
+ * - live/system profile: refuse if Chrome still running
+ * - Jobbot profile (`allowWhileChromeRunning`): system Chrome may stay open
+ * - scrub orphan Singleton* locks on THIS user-data-dir only
  */
 export async function preflightChromeForLaunch(
   userDataDir: string,
   log?: (message: string) => void,
+  opts?: { allowWhileChromeRunning?: boolean },
 ): Promise<void> {
   const root = normalizeChromeUserDataDir(userDataDir);
   if (!root) throw new Error("לא הוגדר נתיב Chrome");
 
-  if (await isChromeRunning()) {
+  if (!opts?.allowWhileChromeRunning && (await isChromeRunning())) {
     log?.("Chrome עדיין רץ — ממתין/עצירה נדרשת");
     throw new Error(CHROME_QUIT_MSG_HE);
   }
 
-  scrubOrphanSingletonLocks(root, log);
+  // Only scrub locks when no Chrome is using them — if system Chrome is open
+  // but this is a different user-data-dir, scrubbing this dir's orphans is safe.
+  if (opts?.allowWhileChromeRunning || !(await isChromeRunning())) {
+    scrubOrphanSingletonLocks(root, log);
+  }
 }
 
 function sleep(ms: number): Promise<void> {
@@ -222,7 +233,9 @@ export async function launchChromePersistent(
   const log = opts.log;
   const connectTimeoutMs = opts.connectTimeoutMs ?? 45_000;
 
-  await preflightChromeForLaunch(userDataDir, log);
+  await preflightChromeForLaunch(userDataDir, log, {
+    allowWhileChromeRunning: Boolean(opts.allowWhileChromeRunning),
+  });
 
   const port = await findFreePort();
   const exe = resolveChromeExecutable();

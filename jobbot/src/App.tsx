@@ -823,6 +823,20 @@ export default function App() {
                 </div>
 
                 <div className="field">
+                  <label>תעודת זהות (ת.ז.) — נדרש לתע״א</label>
+                  <input
+                    value={settings.nationalId || ""}
+                    onChange={(e) => setSettings({ ...settings, nationalId: e.target.value })}
+                    placeholder="הזן ת.ז. — ריק כברירת מחדל"
+                    inputMode="numeric"
+                    autoComplete="off"
+                  />
+                  <p className="hint">
+                    לא ממולא אוטומטית. אם בטופס תע״א יש שדה ת.ז. והשדה כאן ריק — ההגשה תידחה.
+                  </p>
+                </div>
+
+                <div className="field">
                   <label>מיקום חיפוש</label>
                   <input
                     value={settings.location}

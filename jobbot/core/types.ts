@@ -156,6 +156,11 @@ export type BrowserMode = "jobbot" | "live";
 
 export interface AppSettings {
   cvPath: string;
+  /**
+   * Israeli national ID (ת.ז.) for portals that require it (IAI).
+   * Empty by default — never invent a number; user must fill in Settings.
+   */
+  nationalId: string;
   chromeUserDataDir: string;
   /**
    * Default `jobbot`: persistent Jobbot profile + manual login gate.
@@ -185,6 +190,7 @@ export const EXCLUDED_SITES = ["gotfriends", "easy"] as const;
 
 export const DEFAULT_SETTINGS: AppSettings = {
   cvPath: "",
+  nationalId: "",
   chromeUserDataDir: "",
   browserMode: "jobbot",
   useChromeClone: false,

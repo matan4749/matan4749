@@ -1,6 +1,9 @@
 import type { Page } from "playwright";
 import type { SiteAdapterContext } from "../types";
 
+/** Hebrew — IAI must not submit when ת.ז. field exists and settings are empty */
+export const MISSING_NATIONAL_ID_HE = "חסרה תעודת זהות בהגדרות";
+
 export type ApplyStepKind =
   | "login-wall"
   | "bot-wall"
@@ -159,6 +162,49 @@ export async function uploadCvFromSettings(
     };
   }
   return { uploaded: false };
+}
+
+/**
+ * Detect a national-ID (ת.ז.) field on the page.
+ * Heuristics only for name/id/placeholder/aria — no invented IAI-only selectors.
+ */
+export async function pageHasNationalIdField(page: Page): Promise<boolean> {
+  const inputs = page.locator(
+    'input[type="text"], input[type="tel"], input[type="number"], input:not([type]), input[name*="id" i], input[id*="id" i]',
+  );
+  const n = await inputs.count().catch(() => 0);
+  for (let i = 0; i < n; i++) {
+    const el = inputs.nth(i);
+    const visible = await el.isVisible().catch(() => false);
+    if (!visible) continue;
+    const name = ((await el.getAttribute("name").catch(() => "")) || "").trim();
+    const id = ((await el.getAttribute("id").catch(() => "")) || "").trim();
+    const placeholder = ((await el.getAttribute("placeholder").catch(() => "")) || "").trim();
+    const aria = ((await el.getAttribute("aria-label").catch(() => "")) || "").trim();
+    const hay = `${name} ${id} ${placeholder} ${aria}`;
+    if (/id.?number|ת\.?ז|national.?id|tz\b|teudat|ContactForm\[id\]/i.test(hay)) {
+      return true;
+    }
+  }
+  // Label text next to inputs (Hebrew ת.ז.)
+  const labelHit = await page
+    .locator("label, span, div")
+    .filter({ hasText: /ת\.?\s*ז\.?|תעודת זהות/i })
+    .first()
+    .isVisible()
+    .catch(() => false);
+  return Boolean(labelHit);
+}
+
+/**
+ * Pure gate: if the form shows ת.ז. and settings.nationalId is empty → block submit.
+ */
+export function missingNationalIdIfRequired(
+  hasIdField: boolean,
+  nationalId: string | undefined | null,
+): string | null {
+  if (hasIdField && !(nationalId || "").trim()) return MISSING_NATIONAL_ID_HE;
+  return null;
 }
 
 export function signalsFromDomHints(hints: {

@@ -311,6 +311,8 @@ export class JobRunner {
         fullNameEn: "Matan Amar",
         email: settings.reportEmail || "matan4749@gmail.com",
         city: settings.location || "ישראל",
+        // Empty unless Matan filled Settings — never invent ת.ז.
+        nationalId: (settings.nationalId || "").trim(),
       },
       timeoutMs: config.perJobTimeoutMs,
       knowledge: this.learning.getSiteKnowledge(adapterId),

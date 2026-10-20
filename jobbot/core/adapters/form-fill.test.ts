@@ -2,6 +2,8 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
   defaultApplicant,
+  missingNationalIdIfRequired,
+  MISSING_NATIONAL_ID_HE,
   planApplySteps,
   signalsFromDomHints,
   type PageApplySignals,
@@ -198,7 +200,7 @@ describe("IAI application URL + applicant defaults", () => {
     assert.equal(iaiApplicationUrl(job), "https://jobs.iai.co.il/application/778899/");
   });
 
-  it("defaultApplicant seeds Matan profile", () => {
+  it("defaultApplicant seeds Matan profile without inventing ת.ז.", () => {
     const ctx = {
       demo: true,
       timeoutMs: 1,
@@ -215,5 +217,14 @@ describe("IAI application URL + applicant defaults", () => {
     const a = defaultApplicant(ctx);
     assert.equal(a.fullNameHe, "מתן עמר");
     assert.equal(a.email, "matan4749@gmail.com");
+    assert.equal(a.nationalId, "");
+  });
+
+  it("blocks IAI submit when ת.ז. field present and nationalId empty", () => {
+    assert.equal(missingNationalIdIfRequired(true, ""), MISSING_NATIONAL_ID_HE);
+    assert.equal(missingNationalIdIfRequired(true, "   "), MISSING_NATIONAL_ID_HE);
+    assert.equal(missingNationalIdIfRequired(true, undefined), MISSING_NATIONAL_ID_HE);
+    assert.equal(missingNationalIdIfRequired(true, "123456789"), null);
+    assert.equal(missingNationalIdIfRequired(false, ""), null);
   });
 });

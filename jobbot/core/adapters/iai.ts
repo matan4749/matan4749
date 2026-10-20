@@ -5,7 +5,12 @@ import {
   clickApplyAndConfirm,
   detectSiteWall,
 } from "./board-apply";
-import { fillApplicantFields, uploadCvFromSettings } from "./form-fill";
+import {
+  fillApplicantFields,
+  missingNationalIdIfRequired,
+  pageHasNationalIdField,
+  uploadCvFromSettings,
+} from "./form-fill";
 import { detectApplyConfirmation } from "./confirm";
 import {
   BROWSER_CLOSED_CODE,
@@ -221,10 +226,29 @@ export const iaiAdapter: SiteAdapter = {
           };
         }
 
-        // IAI questionnaire: fill known profile fields
+        // ת.ז. — אומת ע״י מתן כחובה. אם השדה בדף וההגדרה ריקה: לא שולחים.
+        const hasTzField = await pageHasNationalIdField(page);
+        const missingTz = missingNationalIdIfRequired(
+          hasTzField,
+          ctx.applicant?.nationalId,
+        );
+        if (missingTz) {
+          ctx.log("warn", `תע״א: ${missingTz}`);
+          return {
+            job,
+            status: "failed",
+            method,
+            reason: missingTz,
+            durationMs: Date.now() - started,
+            confirmed: false,
+          };
+        }
+
+        // Fill only verified settings values (ת.ז. from settings.nationalId when present).
+        // TODO unverified: other IAI questionnaire fields beyond ת.ז. / CV — do not invent.
         await fillApplicantFields(page, ctx, "תע״א");
 
-        // CV upload is required for a successful IAI application
+        // CV upload required for IAI application (אומת ע״י מתן)
         const cv = await uploadCvFromSettings(page, ctx, "תע״א", { required: true });
         if (!cv.uploaded) {
           return {

@@ -46,10 +46,14 @@ function normalize(
         ? 5
         : Math.floor(rawLimit);
 
+  const nationalId =
+    typeof rest.nationalId === "string" ? rest.nationalId.trim() : base.nationalId;
+
   return {
     ...base,
     ...rest,
     cvPath,
+    nationalId,
     reportEmail,
     chromeUserDataDir: chromeRaw ? normalizeChromeUserDataDir(chromeRaw) : "",
     browserMode,
@@ -91,6 +95,7 @@ export function saveSettings(dataDir: string, settings: AppSettings): void {
   fs.mkdirSync(dataDir, { recursive: true });
   const clean: AppSettings = {
     cvPath: settings.cvPath,
+    nationalId: (settings.nationalId || "").trim(),
     chromeUserDataDir: settings.chromeUserDataDir
       ? normalizeChromeUserDataDir(settings.chromeUserDataDir)
       : "",

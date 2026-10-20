@@ -77,6 +77,27 @@ async function detectLoggedInBestEffort(siteId: string, page: Page): Promise<boo
       if (/account\/login|signin/i.test(url)) return false;
       return null;
     }
+    if (siteId === "alljobs") {
+      if (/access\.aspx|\/login/i.test(url)) return false;
+      if (/התנתק|שלום,|המשרות שלי/i.test(body)) return true;
+      return null;
+    }
+    if (siteId === "drushim") {
+      if (/\/login|\/signin/i.test(url)) return false;
+      if (/התנתק|אזור אישי|מרכז ההתראות/i.test(body)) return true;
+      return null;
+    }
+    if (siteId === "elbit") {
+      if (/login|signin|create.?profile/i.test(url) && /password/i.test(body)) return false;
+      if (/sign out|התנתק|my profile|הפרופיל שלי/i.test(body)) return true;
+      return null;
+    }
+    if (siteId === "iai") {
+      if (/access denied|kramerica/i.test(body)) return false;
+      if (/login|signin/i.test(url)) return false;
+      if (/התנתק|שלום|משרות|careers/i.test(body)) return true;
+      return null;
+    }
     return null;
   } catch {
     return null;

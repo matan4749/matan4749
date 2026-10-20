@@ -1,8 +1,14 @@
+/**
+ * Legacy stub factory — AllJobs / Drushim / Elbit / IAI are now live adapters.
+ * Kept only so older imports / docs referencing makeStub patterns still resolve.
+ * Do not register stub adapters in the runtime registry.
+ */
 import type { SiteAdapter, SiteKind } from "./types";
 import { demoJobs } from "./demo";
 import type { ApplyMethod, ApplyResult, JobListing, SiteAdapterContext, SiteSearchParams } from "../types";
 
-function makeStub(opts: {
+/** @deprecated Prefer live adapters in alljobs.ts / drushim.ts / elbit.ts / iai.ts */
+export function makeStub(opts: {
   id: string;
   displayName: string;
   displayNameHe: string;
@@ -15,14 +21,7 @@ function makeStub(opts: {
     status: "stub",
 
     async search(params: SiteSearchParams, ctx: SiteAdapterContext): Promise<JobListing[]> {
-      const kindLabel = opts.siteKind === "career-portal" ? "פורטל קריירה" : "לוח משרות";
-      ctx.log(
-        "info",
-        `${opts.displayNameHe} (${kindLabel}): stub — חיפוש לדוגמה בלבד, בלי הגשה`,
-      );
-      if (opts.careersUrl) {
-        ctx.log("info", `${opts.displayNameHe}: ${opts.careersUrl}`);
-      }
+      ctx.log("warn", `${opts.displayNameHe}: stub factory — לא בשימוש ברישום החי`);
       return demoJobs(opts.id, params).map((j) => ({
         ...j,
         url: opts.careersUrl || j.url,
@@ -36,7 +35,6 @@ function makeStub(opts: {
 
     async apply(job: JobListing, ctx: SiteAdapterContext): Promise<ApplyResult> {
       const method = await this.detectApplyMethod(job, ctx);
-      const started = Date.now();
       const reason = `לא מיושם עדיין — אדפטר stub ל-${opts.displayNameHe}; לא הוגשה מועמדות`;
       ctx.log("warn", `⚠ ${opts.displayNameHe}: ${reason}`);
       return {
@@ -44,30 +42,12 @@ function makeStub(opts: {
         status: "not_implemented",
         method,
         reason,
-        durationMs: Date.now() - started,
+        durationMs: 0,
         confirmed: false,
         simulated: false,
       };
     },
   };
 }
-
-export const alljobsAdapter = makeStub({
-  id: "alljobs",
-  displayName: "AllJobs",
-  displayNameHe: "אולג'ובס",
-  defaultApplyMethod: "chrome-session",
-  siteKind: "board",
-  careersUrl: "https://www.alljobs.co.il/",
-});
-
-export const drushimAdapter = makeStub({
-  id: "drushim",
-  displayName: "Drushim",
-  displayNameHe: "דרושים",
-  defaultApplyMethod: "chrome-session",
-  siteKind: "board",
-  careersUrl: "https://www.drushim.co.il/",
-});
 
 /* GotFriends + Easy (easy.co.il) removed — user has no accounts on those sites */

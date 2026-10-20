@@ -190,8 +190,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
     "מהנדס תוכנה",
   ],
   location: "Israel",
-  // Live adapters first — stubs stay available in Settings but off by default
-  enabledSites: ["linkedin", "indeed"],
+  // All six adapters are live; boards on by default — enable portals in Settings
+  enabledSites: ["linkedin", "indeed", "alljobs", "drushim"],
   jobLimitPerSite: 5,
   sendEmailAfterRun: true,
   llmApiKey: "",

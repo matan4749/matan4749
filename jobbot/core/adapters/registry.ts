@@ -1,7 +1,8 @@
 import type { SiteAdapter } from "./types";
 import { linkedinAdapter } from "./linkedin";
 import { indeedAdapter } from "./indeed";
-import { alljobsAdapter, drushimAdapter } from "./stubs";
+import { alljobsAdapter } from "./alljobs";
+import { drushimAdapter } from "./drushim";
 import { elbitAdapter } from "./elbit";
 import { iaiAdapter } from "./iai";
 

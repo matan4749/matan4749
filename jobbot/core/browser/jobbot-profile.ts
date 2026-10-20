@@ -12,8 +12,8 @@ export function jobbotBrowserProfileRoot(dataDir: string): string {
 export const SITE_LOGIN_URLS: Record<string, string> = {
   linkedin: "https://www.linkedin.com/feed/",
   indeed: "https://il.indeed.com/",
-  elbit: "https://www.elbitsystems.com/careers/",
-  iai: "https://www.iai.co.il/careers",
+  elbit: "https://elbitsystemscareer.com/",
+  iai: "https://jobs.iai.co.il/jobs",
   alljobs: "https://www.alljobs.co.il/",
   drushim: "https://www.drushim.co.il/",
 };

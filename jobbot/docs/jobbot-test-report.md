@@ -19,9 +19,9 @@
 
 ### 1. Reliability (6)
 - `demoApply` never returns `applied`
-- Stubs (alljobs, drushim, elbit, iai) never return `applied`
-- LinkedIn/Indeed demo path never returns `applied`
-- Sanitize strips fake `applied` from demo/stub
+- All registered adapters are `live` (AllJobs/Drushim/Elbit/IAI no longer stubs)
+- Board/portal demo paths never return `applied`
+- Sanitize strips fake `applied` from demo
 - `applied` without `confirmed` → `unknown`
 - Only confirmed non-simulated counts as real
 
@@ -72,7 +72,7 @@
 1. **Chrome lock:** First profile sync may still need **Cmd+Q** if cookie files are locked; after successful clone, normal Chrome can stay open.
 2. **Join friction:** Unsigned app / missing execute bit — use Join.app / Terminal one-liner from `JOBBOT-MAC-README.md`.
 3. **Real LinkedIn:** Selectors / Easy Apply / captcha / “already applied” can skip or fail honestly (`skipped` / `unknown` / `failed`) — never fake `applied`.
-4. **Career portals (Elbit/IAI):** Still stub / not_implemented until selectors are hardened against live portals.
+4. **Career portals (Elbit/IAI):** Live best-effort; bot/login walls → honest Hebrew `not_implemented` (never fake `applied`).
 5. **Mail:** Outbox-only until opaque app mail credentials are configured server-side.
 
 ---

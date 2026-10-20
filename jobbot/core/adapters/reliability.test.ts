@@ -1,11 +1,13 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { demoApply, demoJobs } from "./demo";
-import { alljobsAdapter, drushimAdapter } from "./stubs";
+import { alljobsAdapter } from "./alljobs";
+import { drushimAdapter } from "./drushim";
 import { elbitAdapter } from "./elbit";
 import { iaiAdapter } from "./iai";
 import { linkedinAdapter } from "./linkedin";
 import { indeedAdapter } from "./indeed";
+import { listAdapters } from "./registry";
 import { sanitizeApplyResult, isRealApplied } from "./sanitize";
 import type { ApplyResult, SiteAdapterContext } from "../types";
 
@@ -26,6 +28,12 @@ function ctx(demo: boolean): SiteAdapterContext {
 }
 
 describe("apply reliability — no fake success", () => {
+  it("all registered adapters are live (no stubs)", () => {
+    for (const a of listAdapters()) {
+      assert.equal(a.status, "live", `${a.id} should be live`);
+    }
+  });
+
   it("demoApply never returns applied", async () => {
     const jobs = demoJobs("linkedin", { keywords: ["React"], limit: 5 });
     for (const job of jobs) {
@@ -37,36 +45,26 @@ describe("apply reliability — no fake success", () => {
     }
   });
 
-  it("stub adapters never return applied", async () => {
-    const c = ctx(false);
-    c.chromeUserDataDir = "/tmp/fake-chrome";
-    for (const adapter of [alljobsAdapter, drushimAdapter, elbitAdapter, iaiAdapter]) {
+  it("board/portal adapters demo path never returns applied", async () => {
+    const c = ctx(true);
+    for (const adapter of [
+      alljobsAdapter,
+      drushimAdapter,
+      elbitAdapter,
+      iaiAdapter,
+      linkedinAdapter,
+      indeedAdapter,
+    ]) {
       const jobs = await adapter.search({ keywords: ["TS"], limit: 2 }, c);
       for (const job of jobs) {
         const r = await adapter.apply(job, c);
         assert.notEqual(r.status, "applied", adapter.id);
-        assert.ok(
-          r.status === "not_implemented" || r.status === "skipped",
-          `${adapter.id} got ${r.status}`,
-        );
         assert.equal(isRealApplied(r), false);
       }
     }
   });
 
-  it("linkedin/indeed demo path never returns applied", async () => {
-    const c = ctx(true);
-    for (const adapter of [linkedinAdapter, indeedAdapter]) {
-      const jobs = await adapter.search({ keywords: ["React"], limit: 2 }, c);
-      for (const job of jobs) {
-        const r = await adapter.apply(job, c);
-        assert.notEqual(r.status, "applied", adapter.id);
-        assert.equal(isRealApplied(r), false);
-      }
-    }
-  });
-
-  it("sanitize strips fake applied from demo/stub", () => {
+  it("sanitize strips fake applied from demo", () => {
     const job = demoJobs("x", { keywords: ["a"], limit: 1 })[0];
     const fake: ApplyResult = {
       job,
@@ -106,5 +104,20 @@ describe("apply reliability — no fake success", () => {
       reason: "אושר במסך",
     };
     assert.equal(isRealApplied(sanitizeApplyResult(real, linkedinAdapter, false)), true);
+  });
+
+  it("live adapters still sanitize unconfirmed applied", () => {
+    for (const adapter of [alljobsAdapter, drushimAdapter, elbitAdapter, iaiAdapter]) {
+      const job = demoJobs(adapter.id, { keywords: ["a"], limit: 1 })[0];
+      const soft: ApplyResult = {
+        job,
+        status: "applied",
+        method: "cv-upload",
+        durationMs: 1,
+        confirmed: false,
+      };
+      const scrubbed = sanitizeApplyResult(soft, adapter, false);
+      assert.equal(scrubbed.status, "unknown", adapter.id);
+    }
   });
 });

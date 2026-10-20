@@ -1,0 +1,128 @@
+{
+  "name": "jobbot",
+  "version": "0.2.0",
+  "description": "Jobbot — אוטומציית חיפוש והגשת משרות מקומית עבור מתן עמר",
+  "main": "dist-electron/main.js",
+  "author": "Matan Amar",
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "dev": "vite",
+    "build": "npm run typecheck && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.electron.json --noEmit",
+    "demo": "JOBBOT_DEMO=1 vite",
+    "demo:run": "JOBBOT_DEMO=1 tsx scripts/demo-run.ts",
+    "test": "tsx --test core/adapters/reliability.test.ts core/adapters/board-apply.test.ts core/adapters/form-fill.test.ts core/adapters/linkedin-blocker.test.ts core/browser/chrome-lock.test.ts core/browser/chrome-paths.test.ts core/browser/launch-chrome.test.ts core/browser/login-gate.test.ts core/browser/profile-clone.test.ts core/runner/demo-smoke.test.ts core/runner/job-limit.test.ts core/learning/engine.test.ts core/chat/parse-intent.test.ts",
+    "start": "electron .",
+    "dist": "npm run build && electron-builder --publish never",
+    "dist:win": "npm run build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --win zip portable nsis --x64 --publish never",
+    "dist:win:zip": "npm run build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --win zip --x64 --publish never",
+    "dist:mac": "npm run build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac zip --arm64 --x64 --publish never && node scripts/rename-mac-zips.mjs",
+    "dist:mac:arm64": "npm run build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac zip --arm64 --publish never",
+    "media:mac:parts": "node scripts/split-and-verify-mac.mjs",
+    "dist:linux": "npm run build && electron-builder --linux AppImage --x64 --publish never",
+    "dist:dir": "npm run build && electron-builder --dir --publish never",
+    "pack:win-folder": "npm run build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --win dir --x64 --publish never && node scripts/zip-win-unpacked.mjs"
+  },
+  "dependencies": {
+    "nodemailer": "^6.9.16",
+    "pdf-parse": "^1.1.1",
+    "playwright": "^1.49.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "uuid": "^11.0.3"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "@types/nodemailer": "^6.4.17",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@types/uuid": "^10.0.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "electron": "^33.2.1",
+    "electron-builder": "^25.1.8",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.3",
+    "vite-plugin-electron": "^0.28.8",
+    "vite-plugin-electron-renderer": "^0.14.6"
+  },
+  "build": {
+    "appId": "life.matan.jobbot",
+    "productName": "Jobbot",
+    "copyright": "Copyright © Matan Amar",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "assets/cv",
+        "to": "cv"
+      }
+    ],
+    "asar": true,
+    "win": {
+      "signAndEditExecutable": false,
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "Jobbot-Setup-${version}-${os}.${ext}"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Jobbot",
+      "uninstallDisplayName": "Jobbot"
+    },
+    "portable": {
+      "artifactName": "Jobbot-Portable-${version}.exe"
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "category": "Office",
+      "artifactName": "Jobbot-${version}.${ext}"
+    },
+    "mac": {
+      "category": "public.app-category.productivity",
+      "target": [
+        {
+          "target": "zip",
+          "arch": ["arm64", "x64"]
+        }
+      ],
+      "artifactName": "Jobbot-${version}-mac-${arch}.${ext}",
+      "identity": null,
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false
+    }
+  }
+}

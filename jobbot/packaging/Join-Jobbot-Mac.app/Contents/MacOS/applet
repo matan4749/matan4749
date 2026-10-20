@@ -1,0 +1,130 @@
+#!/usr/bin/osascript
+-- Unsigned AppleScript .app often fails silently under Gatekeeper.
+-- Show dialog FIRST. Prefer tar.gz parts. Prefer telling user to use .command.
+
+on ensureSlash(p)
+	if p ends with "/" then return p
+	return p & "/"
+end ensureSlash
+
+on posixExists(p)
+	try
+		do shell script "/bin/test -f " & quoted form of p
+		return true
+	on error
+		return false
+	end try
+end posixExists
+
+on dirExists(p)
+	try
+		do shell script "/bin/test -d " & quoted form of p
+		return true
+	on error
+		return false
+	end try
+end dirExists
+
+on hasTarParts(folderPath)
+	return posixExists(folderPath & "Jobbot-0.1.0-mac-arm64.tar.gz.part00") and posixExists(folderPath & "Jobbot-0.1.0-mac-arm64.tar.gz.part01") and posixExists(folderPath & "Jobbot-0.1.0-mac-arm64.tar.gz.part02")
+end hasTarParts
+
+on hasZipParts(folderPath)
+	return posixExists(folderPath & "Jobbot-0.1.0-mac-arm64.zip.part00") and posixExists(folderPath & "Jobbot-0.1.0-mac-arm64.zip.part01") and posixExists(folderPath & "Jobbot-0.1.0-mac-arm64.zip.part02")
+end hasZipParts
+
+on partsKindIn(folderPath)
+	if hasTarParts(folderPath) then return "tar"
+	if hasZipParts(folderPath) then return "zip"
+	return ""
+end partsKindIn
+
+on tarHint()
+	return "cd ~/Desktop/Jobbot && cat Jobbot-0.1.0-mac-arm64.tar.gz.part00 Jobbot-0.1.0-mac-arm64.tar.gz.part01 Jobbot-0.1.0-mac-arm64.tar.gz.part02 > Jobbot-mac.tar.gz && tar -tzf Jobbot-mac.tar.gz && tar -xzf Jobbot-mac.tar.gz && open -R Jobbot.app"
+end tarHint
+
+on run
+	-- Immediate feedback — if this never shows, Gatekeeper blocked the .app
+	try
+		display dialog "מתחיל… מחפש קבצי .tar.gz.part" & return & return & ¬
+			"אם שום דבר לא קורה בפעם הבאה — השתמש ב-Join-Jobbot-Mac.command" & return & ¬
+			"(לחיצה ימנית ← פתח) או בפקודת Terminal." buttons {"המשך"} default button 1 with title "Jobbot Join"
+	end try
+
+	-- Try strip quarantine on self (best-effort)
+	try
+		set mePath to POSIX path of (path to me)
+		do shell script "/usr/bin/xattr -dr com.apple.quarantine " & quoted form of mePath
+	end try
+
+	set homePath to ensureSlash(POSIX path of (path to home folder))
+	set found to ""
+	set kind to ""
+	set candidates to {¬
+		homePath & "Desktop/Jobbot/", ¬
+		homePath & "Desktop/", ¬
+		homePath & "Downloads/Jobbot/", ¬
+		homePath & "Downloads/", ¬
+		homePath & "שולחן העבודה/", ¬
+		homePath & "הורדות/"}
+
+	try
+		set appPath to ensureSlash(POSIX path of (path to me))
+		if appPath does not contain "AppTranslocation" and appPath does not contain "TemporaryItems" then
+			set parentDir to ensureSlash(do shell script "dirname " & quoted form of (text 1 thru -2 of appPath))
+			set beginning of candidates to parentDir
+		end if
+	end try
+
+	repeat with d in candidates
+		set dPosix to d as text
+		if dirExists(dPosix) then
+			set k to partsKindIn(dPosix)
+			if k is not "" then
+				set found to dPosix
+				set kind to k
+				exit repeat
+			end if
+		end if
+	end repeat
+
+	if found is "" then
+		try
+			set theFolder to choose folder with prompt "בחר תיקייה עם Jobbot-…tar.gz.part00/01/02:"
+			set found to ensureSlash(POSIX path of theFolder)
+			set kind to partsKindIn(found)
+			if kind is "" then set found to ""
+		end try
+	end if
+
+	if found is "" then
+		display dialog "לא נמצאו .tar.gz.part" & return & return & ¬
+			"עדיף: Join-Jobbot-Mac.command (לחיצה ימנית ← פתח)" & return & return & ¬
+			"או Terminal:" & return & my tarHint() buttons {"אישור"} default button 1 with title "Jobbot" with icon stop
+		return
+	end if
+
+	display dialog "נמצא ב:" & return & found & return & "סוג: " & kind & return & return & "מחבר ומחלץ…" buttons {"המשך"} default button 1 with title "Jobbot Join"
+
+	if kind is "tar" then
+		set joinCmd to "cd " & quoted form of found & " && /usr/bin/xattr -dr com.apple.quarantine . 2>/dev/null; /bin/rm -f Jobbot-mac.tar.gz Jobbot-mac.zip; /bin/cat Jobbot-0.1.0-mac-arm64.tar.gz.part00 Jobbot-0.1.0-mac-arm64.tar.gz.part01 Jobbot-0.1.0-mac-arm64.tar.gz.part02 > Jobbot-mac.tar.gz && /usr/bin/tar -tzf Jobbot-mac.tar.gz >/dev/null && /bin/rm -rf Jobbot.app && /usr/bin/tar -xzf Jobbot-mac.tar.gz && /usr/bin/xattr -dr com.apple.quarantine Jobbot.app 2>/dev/null; /usr/bin/test -d Jobbot.app"
+	else
+		set joinCmd to "cd " & quoted form of found & " && /bin/rm -f Jobbot-mac.zip; /bin/cat Jobbot-0.1.0-mac-arm64.zip.part00 Jobbot-0.1.0-mac-arm64.zip.part01 Jobbot-0.1.0-mac-arm64.zip.part02 > Jobbot-mac.zip && /usr/bin/unzip -t Jobbot-mac.zip >/dev/null && /bin/rm -rf Jobbot.app && /usr/bin/unzip -o -q Jobbot-mac.zip && /usr/bin/test -d Jobbot.app"
+	end if
+
+	try
+		do shell script joinCmd
+	on error errMsg
+		display dialog "נכשל:" & return & errMsg & return & return & ¬
+			"השתמש ב-.command או Terminal:" & return & my tarHint() buttons {"אישור"} default button 1 with title "Jobbot" with icon stop
+		return
+	end try
+
+	set appOut to found & "Jobbot.app"
+	display dialog "✅ Jobbot.app מוכן!" & return & appOut & return & return & ¬
+		"לחיצה ימנית על Jobbot.app ← פתח" & return & ¬
+		"אל תלחץ פעמיים על הארכיון." buttons {"הצג ב-Finder"} default button 1 with title "Jobbot מוכן"
+	try
+		do shell script "/usr/bin/open -R " & quoted form of appOut
+	end try
+end run

@@ -1,0 +1,132 @@
+import fs from "node:fs";
+import path from "node:path";
+import { normalizeChromeUserDataDir } from "../browser/chrome-paths";
+import { DEFAULT_SETTINGS, EXCLUDED_SITES, type AppSettings } from "../types";
+import { resolveDefaultCvPath } from "../cv/paths";
+
+export function settingsPath(dataDir: string): string {
+  return path.join(dataDir, "settings.json");
+}
+
+function envDefaults(appRoot?: string): AppSettings {
+  return {
+    ...DEFAULT_SETTINGS,
+    reportEmail: process.env.JOBBOT_REPORT_EMAIL || DEFAULT_SETTINGS.reportEmail,
+    cvPath: resolveDefaultCvPath(process.env.JOBBOT_CV_PATH, appRoot),
+    chromeUserDataDir: process.env.JOBBOT_CHROME_PROFILE || "",
+  };
+}
+
+/** Strip legacy SMTP fields if present in older settings.json */
+function normalize(
+  raw: Partial<AppSettings> & { smtp?: unknown },
+  appRoot?: string,
+): AppSettings {
+  const base = envDefaults(appRoot);
+  const { smtp: _legacy, ...rest } = raw;
+  void _legacy;
+  const cvPath = resolveDefaultCvPath(rest.cvPath || base.cvPath, appRoot);
+  const reportEmail =
+    (rest.reportEmail && rest.reportEmail.trim()) || base.reportEmail;
+  const chromeRaw = (rest.chromeUserDataDir ?? base.chromeUserDataDir) || "";
+  const useChromeClone =
+    typeof rest.useChromeClone === "boolean" ? rest.useChromeClone : base.useChromeClone;
+  const browserMode =
+    rest.browserMode === "live" || rest.browserMode === "jobbot"
+      ? rest.browserMode
+      : base.browserMode;
+  // Stability: Matan's 20-per-site flooded flaky Easy Apply / closed-browser spam.
+  // Cap at 10; values above migrate down to the stable default of 5.
+  const rawLimit =
+    typeof rest.jobLimitPerSite === "number" ? rest.jobLimitPerSite : base.jobLimitPerSite;
+  const jobLimitPerSite =
+    !Number.isFinite(rawLimit) || rawLimit < 1
+      ? base.jobLimitPerSite
+      : rawLimit > 10
+        ? 5
+        : Math.floor(rawLimit);
+
+  const nationalId =
+    typeof rest.nationalId === "string" ? rest.nationalId.trim() : base.nationalId;
+
+  return {
+    ...base,
+    ...rest,
+    cvPath,
+    nationalId,
+    reportEmail,
+    chromeUserDataDir: chromeRaw ? normalizeChromeUserDataDir(chromeRaw) : "",
+    browserMode,
+    useChromeClone,
+    jobLimitPerSite,
+    enabledSites:
+      rest.enabledSites && rest.enabledSites.length
+        ? sanitizeSites(rest.enabledSites)
+        : base.enabledSites,
+  };
+}
+
+/** Drop excluded sites; ensure Elbit + IAI remain available */
+function sanitizeSites(sites: string[]): string[] {
+  const excluded = new Set<string>(EXCLUDED_SITES);
+  const next = sites.filter((id) => !excluded.has(id));
+  for (const id of ["elbit", "iai"]) {
+    if (!next.includes(id)) next.push(id);
+  }
+  return next;
+}
+
+export function loadSettings(dataDir: string, appRoot?: string): AppSettings {
+  const p = settingsPath(dataDir);
+  try {
+    if (fs.existsSync(p)) {
+      const raw = JSON.parse(fs.readFileSync(p, "utf8")) as Partial<AppSettings> & {
+        smtp?: unknown;
+      };
+      return normalize(raw, appRoot);
+    }
+  } catch {
+    /* defaults */
+  }
+  return envDefaults(appRoot);
+}
+
+export function saveSettings(dataDir: string, settings: AppSettings): void {
+  fs.mkdirSync(dataDir, { recursive: true });
+  const clean: AppSettings = {
+    cvPath: settings.cvPath,
+    nationalId: (settings.nationalId || "").trim(),
+    chromeUserDataDir: settings.chromeUserDataDir
+      ? normalizeChromeUserDataDir(settings.chromeUserDataDir)
+      : "",
+    browserMode: settings.browserMode === "live" ? "live" : "jobbot",
+    useChromeClone: Boolean(settings.useChromeClone),
+    reportEmail: settings.reportEmail,
+    keywords: settings.keywords,
+    location: settings.location,
+    enabledSites: settings.enabledSites,
+    jobLimitPerSite: settings.jobLimitPerSite,
+    sendEmailAfterRun: settings.sendEmailAfterRun,
+    llmApiKey: settings.llmApiKey || "",
+    llmBaseUrl: settings.llmBaseUrl || "",
+    llmModel: settings.llmModel || "",
+  };
+  fs.writeFileSync(settingsPath(dataDir), JSON.stringify(clean, null, 2), "utf8");
+}
+
+/** Copy store/bundled CV into app userData so Electron always has a local file */
+export function seedCvIntoDataDir(dataDir: string, appRoot?: string): string {
+  const source = resolveDefaultCvPath(undefined, appRoot);
+  const destDir = path.join(dataDir, "cv");
+  const dest = path.join(destDir, "matan-amar-cv.pdf");
+  fs.mkdirSync(destDir, { recursive: true });
+  try {
+    if (fs.existsSync(source)) {
+      fs.copyFileSync(source, dest);
+      return dest;
+    }
+  } catch {
+    /* keep existing dest if any */
+  }
+  return fs.existsSync(dest) ? dest : source;
+}

@@ -135,6 +135,9 @@ export const alljobsAdapter: SiteAdapter = {
             "button:has-text('הגשת מועמדות')",
             "a:has-text('הגש מועמדות')",
           ]),
+          // AllJobs exposes #inp_UploadCvFile (often hidden) after login
+          requireCvUpload: Boolean(ctx.cvPath),
+          fillProfileFields: true,
           confirmExtra: [
             "text=/המועמדות נשלחה/i",
             "text=/קורות החיים נשלחו/i",

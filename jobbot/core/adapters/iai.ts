@@ -5,8 +5,11 @@ import {
   clickApplyAndConfirm,
   detectSiteWall,
 } from "./board-apply";
+import { fillApplicantFields, uploadCvFromSettings } from "./form-fill";
+import { detectApplyConfirmation } from "./confirm";
 import {
   BROWSER_CLOSED_CODE,
+  clickFirst,
   fillFirst,
   hasBrowserSession,
   isBrowserClosedError,
@@ -18,6 +21,18 @@ import type { ApplyMethod, ApplyResult, JobListing, SiteAdapterContext, SiteSear
 /** Israel Aerospace Industries (תעשייה אווירית) careers */
 export const IAI_CAREERS_URL = "https://jobs.iai.co.il/jobs";
 export const IAI_HOME = "https://jobs.iai.co.il/";
+export const IAI_APPLICATION_BASE = "https://jobs.iai.co.il/application/";
+
+/** Prefer canonical application URL when job id is known */
+export function iaiApplicationUrl(job: JobListing): string {
+  const fromPath = job.url.match(/\/application\/(\d+)/i)?.[1];
+  if (fromPath) return `${IAI_APPLICATION_BASE}${fromPath}/`;
+  const fromId = job.id.match(/(\d{6,})/)?.[1];
+  if (fromId && !job.url.includes("/jobs")) return `${IAI_APPLICATION_BASE}${fromId}/`;
+  const q = job.url.match(/[?&](?:jobId|id|application)=(\d+)/i)?.[1];
+  if (q) return `${IAI_APPLICATION_BASE}${q}/`;
+  return job.url;
+}
 
 export const iaiAdapter: SiteAdapter = {
   id: "iai",
@@ -48,8 +63,6 @@ export const iaiAdapter: SiteAdapter = {
         timeout: Math.min(ctx.timeoutMs, 45000),
       });
 
-      // Bot / WAF wall is common on jobs.iai.co.il from datacenter IPs;
-      // with Matan's real Chrome profile after login gate it often passes.
       const wall = await detectSiteWall(page, "תע״א");
       if (wall) {
         ctx.log("warn", wall.reasonHe);
@@ -80,18 +93,19 @@ export const iaiAdapter: SiteAdapter = {
       }
 
       await page
-        .locator('a[href*="job"], a[href*="position"], .job-item, .job-card, article a')
+        .locator(
+          'a[href*="/application/"], a[href*="job"], a[href*="position"], .job-item, .job-card, article a',
+        )
         .first()
         .waitFor({ state: "attached", timeout: 15000 })
         .catch(() => undefined);
 
       const cardSelectors = pickSelector(ctx.knowledge, "jobCard", [
+        'a[href*="/application/"]',
         "a[href*='/job']",
         "a[href*='position']",
-        "a[href*='Job']",
         ".job-item a",
         ".job-card a",
-        ".career-listing a",
         "[data-job-id]",
         "article a",
       ]);
@@ -108,10 +122,11 @@ export const iaiAdapter: SiteAdapter = {
           const card = cards.nth(i);
           const href = (await card.getAttribute("href").catch(() => null)) || "";
           if (!href || href === "#" || href.startsWith("javascript:")) continue;
-          const absolute = absoluteUrl(href, IAI_HOME);
+          let absolute = absoluteUrl(href, IAI_HOME);
+          const appId = absolute.match(/\/application\/(\d+)/i)?.[1];
+          if (appId) absolute = `${IAI_APPLICATION_BASE}${appId}/`;
           if (seen.has(absolute)) continue;
-          // Skip pure nav links
-          if (/\/wp-content\/|mailto:|#apply$/i.test(absolute) && !/job|position/i.test(absolute)) {
+          if (/\/wp-content\/|mailto:/i.test(absolute) && !/application|job|position/i.test(absolute)) {
             continue;
           }
           seen.add(absolute);
@@ -121,7 +136,7 @@ export const iaiAdapter: SiteAdapter = {
             `IAI ${keywords} ${i + 1}`;
 
           jobs.push({
-            id: `iai-${i}-${Date.now()}`,
+            id: `iai-${appId || i}-${Date.now()}`,
             site: "iai",
             title,
             company: "IAI",
@@ -153,11 +168,13 @@ export const iaiAdapter: SiteAdapter = {
     }
 
     const started = Date.now();
+    const target = iaiApplicationUrl(job);
     try {
       return await withBrowserPage(ctx, async (page) => {
-        await page.goto(job.url, {
+        ctx.log("info", `תע״א: פותח טופס הגשה — ${target}`);
+        await page.goto(target, {
           waitUntil: "domcontentloaded",
-          timeout: Math.min(ctx.timeoutMs, 40000),
+          timeout: Math.min(ctx.timeoutMs, 45000),
         });
 
         const wall = await detectSiteWall(page, "תע״א");
@@ -172,31 +189,121 @@ export const iaiAdapter: SiteAdapter = {
           };
         }
 
-        return clickApplyAndConfirm({
+        // Some listings land on job detail first — click into application
+        const hasFileAlready =
+          (await page.locator('input[type="file"]').count().catch(() => 0)) > 0;
+        if (!hasFileAlready) {
+          await clickFirst(
+            page,
+            pickSelector(ctx.knowledge, "apply", [
+              "button:has-text('הגש')",
+              "a:has-text('הגשת מועמדות')",
+              "button:has-text('הגשת מועמדות')",
+              "a:has-text('הגש מועמדות')",
+              "a[href*='/application/']",
+              "button:has-text('Apply')",
+              "a:has-text('Apply')",
+            ]),
+            10_000,
+          ).catch(() => undefined);
+          await new Promise((r) => setTimeout(r, 1000));
+        }
+
+        const midWall = await detectSiteWall(page, "תע״א");
+        if (midWall) {
+          return {
+            job,
+            status: midWall.kind === "vip" ? "skipped" : "not_implemented",
+            method,
+            reason: midWall.reasonHe,
+            durationMs: Date.now() - started,
+            confirmed: false,
+          };
+        }
+
+        // IAI questionnaire: fill known profile fields
+        await fillApplicantFields(page, ctx, "תע״א");
+
+        // CV upload is required for a successful IAI application
+        const cv = await uploadCvFromSettings(page, ctx, "תע״א", { required: true });
+        if (!cv.uploaded) {
+          return {
+            job,
+            status: "failed",
+            method,
+            reason:
+              cv.reasonHe ||
+              "תע״א: לא נמצא שדה העלאת קו״ח / ההעלאה לא אומתה — לא מסומן כהצלחה",
+            durationMs: Date.now() - started,
+            confirmed: false,
+          };
+        }
+
+        // Submit questionnaire
+        const submitted = await clickFirst(
           page,
-          ctx,
-          job,
-          method,
-          labelHe: "תע״א",
-          started,
-          applySelectors: pickSelector(ctx.knowledge, "apply", [
+          pickSelector(ctx.knowledge, "submit", [
+            "button:has-text('שלח')",
             "button:has-text('הגש')",
-            "a:has-text('הגשת מועמדות')",
             "button:has-text('הגשת מועמדות')",
-            "a:has-text('הגש מועמדות')",
-            "button:has-text('שלח קורות חיים')",
-            "a:has-text('שלח קורות חיים')",
-            "button:has-text('Apply')",
-            "a:has-text('Apply')",
-            "button:has-text('Apply now')",
+            "button:has-text('Submit')",
+            "button[type='submit']",
+            "input[type='submit']",
           ]),
-          confirmExtra: [
-            "text=/המועמדות נשלחה/i",
-            "text=/תודה על הגשת/i",
-            "text=/application submitted/i",
-            "text=/thank you for applying/i",
-          ],
-        });
+          12_000,
+        )
+          .then(() => true)
+          .catch(() => false);
+
+        if (!submitted) {
+          // Fall back to shared multi-step helper without double-requiring CV
+          return clickApplyAndConfirm({
+            page,
+            ctx,
+            job,
+            method,
+            labelHe: "תע״א",
+            started,
+            applySelectors: ["button:has-text('שלח')", "button[type='submit']"],
+            requireCvUpload: false,
+            fillProfileFields: false,
+            confirmExtra: [
+              "text=/המועמדות נשלחה/i",
+              "text=/תודה על הגשת/i",
+              "text=/application submitted/i",
+              "text=/הפניה התקבלה/i",
+            ],
+          });
+        }
+
+        const { confirmed, matched } = await detectApplyConfirmation(page, ctx, [
+          "text=/המועמדות נשלחה/i",
+          "text=/תודה על הגשת/i",
+          "text=/הפניה התקבלה/i",
+          "text=/application submitted/i",
+          "text=/thank you for applying/i",
+        ]);
+        if (!confirmed) {
+          ctx.log("warn", "תע״א: אין אישור הגשה במסך — לא מסומן כהצלחה");
+          return {
+            job,
+            status: "unknown",
+            method,
+            reason: "לא אומתה הגשה — טופס/קו״ח מולאו אך אין מסך אישור",
+            durationMs: Date.now() - started,
+            confirmed: false,
+          };
+        }
+
+        ctx.log("info", `תע״א: אומתה הגשה (${matched})`);
+        return {
+          job,
+          status: "applied",
+          method,
+          reason: `אושר במסך: ${matched}`,
+          durationMs: Date.now() - started,
+          confirmed: true,
+        };
       });
     } catch (err) {
       if (isBrowserClosedError(err)) throw new Error(BROWSER_CLOSED_CODE);

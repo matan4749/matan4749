@@ -169,13 +169,19 @@ export const elbitAdapter: SiteAdapter = {
             "button:has-text('הגש מועמדות')",
             "a:has-text('הגש מועמדות')",
             "button:has-text('הגשת מועמדות')",
+            "button:has-text('שלח')",
+            'input[name="ContactForm[cvfile]"]',
             "a:has-text('צור פרופיל')",
           ]),
+          // Hunter lead form + portal both expect CV when file input exists
+          requireCvUpload: Boolean(ctx.cvPath),
+          fillProfileFields: true,
           confirmExtra: [
             "text=/application submitted/i",
             "text=/thank you for applying/i",
             "text=/המועמדות נשלחה/i",
             "text=/תודה על הגשת/i",
+            "text=/הפרטים נשלחו/i",
           ],
         });
       });

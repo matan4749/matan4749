@@ -1,6 +1,7 @@
 import type { Page } from "playwright";
 import { clickFirst } from "../browser/session";
 import { detectApplyConfirmation } from "./confirm";
+import { fillApplicantFields, uploadCvFromSettings } from "./form-fill";
 import type { ApplyMethod, ApplyResult, JobListing, SiteAdapterContext } from "../types";
 
 export type SiteWall =
@@ -79,13 +80,8 @@ export async function uploadCvIfPresent(
   ctx: SiteAdapterContext,
   labelHe: string,
 ): Promise<boolean> {
-  if (!ctx.cvPath) return false;
-  const files = page.locator('input[type="file"]');
-  const n = await files.count().catch(() => 0);
-  if (n === 0) return false;
-  await files.first().setInputFiles(ctx.cvPath);
-  ctx.log("info", `${labelHe}: הועלה קו״ח`);
-  return true;
+  const r = await uploadCvFromSettings(page, ctx, labelHe, { required: false });
+  return r.uploaded;
 }
 
 export async function clickApplyAndConfirm(opts: {
@@ -99,6 +95,9 @@ export async function clickApplyAndConfirm(opts: {
   submitSelectors?: string[];
   confirmExtra?: string[];
   applyTimeoutMs?: number;
+  /** When true, missing CV file input after apply is an honest failure (IAI/Elbit) */
+  requireCvUpload?: boolean;
+  fillProfileFields?: boolean;
 }): Promise<ApplyResult> {
   const {
     page,
@@ -113,12 +112,15 @@ export async function clickApplyAndConfirm(opts: {
       "button:has-text('הגש')",
       "button:has-text('Submit')",
       "button:has-text('Apply')",
+      "button:has-text('Submit your application')",
       "button[type='submit']",
       "a:has-text('הגשת מועמדות')",
       "button:has-text('הגשת מועמדות')",
     ],
     confirmExtra = [],
     applyTimeoutMs = 12_000,
+    requireCvUpload = false,
+    fillProfileFields = true,
   } = opts;
 
   const wall = await detectSiteWall(page, labelHe);
@@ -172,7 +174,32 @@ export async function clickApplyAndConfirm(opts: {
     };
   }
 
-  await uploadCvIfPresent(page, ctx, labelHe);
+  if (fillProfileFields) {
+    await fillApplicantFields(page, ctx, labelHe);
+  }
+
+  // Upload when the form asks (file input present). Never fail solely because
+  // a logged-in profile already has a saved CV and no file picker is shown.
+  const fileAsked =
+    (await page
+      .locator(
+        '#inp_UploadCvFile, input[name="inp_UploadCvFile"], input[name="ContactForm[cvfile]"], input[type="file"]',
+      )
+      .count()
+      .catch(() => 0)) > 0;
+  const cv = await uploadCvFromSettings(page, ctx, labelHe, {
+    required: Boolean(requireCvUpload && fileAsked),
+  });
+  if (requireCvUpload && fileAsked && !cv.uploaded) {
+    return {
+      job,
+      status: "failed",
+      method,
+      reason: cv.reasonHe || `לא אומתה העלאת קו״ח ב-${labelHe}`,
+      durationMs: Date.now() - started,
+      confirmed: false,
+    };
+  }
 
   // Multi-step: try submit a few times
   let submitted = false;
@@ -189,13 +216,15 @@ export async function clickApplyAndConfirm(opts: {
           "button:has-text('Next')",
           "button:has-text('הבא')",
           "a:has-text('המשך')",
+          ".VipBoxUpladCvButton",
         ],
         6_000,
       )
         .then(() => true)
         .catch(() => false);
       if (!next) break;
-      await uploadCvIfPresent(page, ctx, labelHe);
+      if (fillProfileFields) await fillApplicantFields(page, ctx, labelHe);
+      await uploadCvFromSettings(page, ctx, labelHe, { required: false });
     }
   }
 

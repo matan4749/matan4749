@@ -1,6 +1,8 @@
 import type { SiteAdapter } from "./types";
 import { demoApply, demoJobs } from "./demo";
 import { detectApplyConfirmation } from "./confirm";
+import { detectSiteWall } from "./board-apply";
+import { fillApplicantFields, uploadCvFromSettings } from "./form-fill";
 import {
   BROWSER_CLOSED_CODE,
   clickFirst,
@@ -110,6 +112,42 @@ export const indeedAdapter: SiteAdapter = {
           timeout: Math.min(ctx.timeoutMs, 25000),
         });
 
+        const wall = await detectSiteWall(page, "אינדיד");
+        if (wall) {
+          return {
+            job,
+            status: wall.kind === "vip" ? "skipped" : "not_implemented",
+            method,
+            reason: wall.reasonHe,
+            durationMs: Date.now() - started,
+            confirmed: false,
+          };
+        }
+
+        // External employer site — do not fake applied
+        const external = await page
+          .locator(
+            "button:has-text('Apply on company site'), a:has-text('Apply on company site'), button:has-text('הגש באתר החברה'), a:has-text('הגש באתר החברה')",
+          )
+          .first()
+          .isVisible()
+          .catch(() => false);
+        const indeedApply = await page
+          .locator("#indeedApplyButton, button.ia-IndeedApplyButton, button:has-text('Apply now'), button:has-text('הגש מועמדות')")
+          .first()
+          .isVisible()
+          .catch(() => false);
+        if (external && !indeedApply) {
+          return {
+            job,
+            status: "skipped",
+            method,
+            reason: "דילוג: משרה חיצונית באתר מעסיק (לא Easy Apply של Indeed)",
+            durationMs: Date.now() - started,
+            confirmed: false,
+          };
+        }
+
         const applyBtns = pickSelector(ctx.knowledge, "apply", [
           "button:has-text('Apply now')",
           "button:has-text('הגש מועמדות')",
@@ -132,28 +170,84 @@ export const indeedAdapter: SiteAdapter = {
         }
         ctx.log("info", "Indeed: נפתח טופס הגשה");
 
-        if (ctx.cvPath) {
-          const fileInputs = page.locator('input[type="file"]');
-          const n = await fileInputs.count();
-          if (n > 0) {
-            await fileInputs.first().setInputFiles(ctx.cvPath);
-            ctx.log("info", "Indeed: הועלה קו״ח");
-          } else if (!ctx.knowledge.skipSteps.includes("cvUploadRequired")) {
-            throw new Error("CV_UPLOAD_INPUT_NOT_FOUND");
+        await new Promise((r) => setTimeout(r, 800));
+        const midWall = await detectSiteWall(page, "אינדיד");
+        if (midWall) {
+          return {
+            job,
+            status: midWall.kind === "vip" ? "skipped" : "not_implemented",
+            method,
+            reason: midWall.reasonHe,
+            durationMs: Date.now() - started,
+            confirmed: false,
+          };
+        }
+
+        await fillApplicantFields(page, ctx, "אינדיד");
+
+        // Upload only when the form asks (file input). Saved-profile CV is OK without input.
+        const fileCount = await page.locator('input[type="file"]').count().catch(() => 0);
+        if (fileCount > 0) {
+          const cv = await uploadCvFromSettings(page, ctx, "אינדיד", { required: true });
+          if (!cv.uploaded) {
+            return {
+              job,
+              status: "failed",
+              method,
+              reason: cv.reasonHe || "Indeed: טופס מבקש קו״ח אך ההעלאה לא אומתה",
+              durationMs: Date.now() - started,
+              confirmed: false,
+            };
           }
         }
 
-        const submit = pickSelector(ctx.knowledge, "submit", [
-          "button:has-text('Submit')",
-          "button:has-text('המשך')",
-          "button:has-text('שלח')",
-          "button[type='submit']",
-        ]);
-        await clickFirst(page, submit, Math.min(ctx.timeoutMs, 20000));
+        // Multi-step: Continue / Submit
+        let submitted = false;
+        for (let i = 0; i < 4; i++) {
+          const submit = pickSelector(ctx.knowledge, "submit", [
+            "button:has-text('Submit')",
+            "button:has-text('Submit your application')",
+            "button:has-text('המשך')",
+            "button:has-text('שלח')",
+            "button:has-text('Apply')",
+            "button[type='submit']",
+          ]);
+          try {
+            await clickFirst(page, submit, Math.min(ctx.timeoutMs, 15000));
+            submitted = true;
+            await new Promise((r) => setTimeout(r, 600));
+            // Keep going if still on intermediate step
+            const stillForm = await page
+              .locator('input[type="file"], button:has-text("Continue"), button:has-text("המשך")')
+              .first()
+              .isVisible()
+              .catch(() => false);
+            if (!stillForm) break;
+            await fillApplicantFields(page, ctx, "אינדיד");
+            if ((await page.locator('input[type="file"]').count().catch(() => 0)) > 0) {
+              await uploadCvFromSettings(page, ctx, "אינדיד", { required: false });
+            }
+          } catch {
+            break;
+          }
+        }
+
+        if (!submitted) {
+          return {
+            job,
+            status: "skipped",
+            method,
+            reason: "דילוג: טופס Indeed לא הושלם (אין Submit)",
+            durationMs: Date.now() - started,
+            confirmed: false,
+          };
+        }
 
         const { confirmed, matched } = await detectApplyConfirmation(page, ctx, [
           "text=/application submitted/i",
           "text=/you applied/i",
+          "text=/המועמדות נשלחה/i",
+          "text=/תודה על הגשת/i",
         ]);
         if (!confirmed) {
           ctx.log("warn", "Indeed: אין אישור הגשה במסך — לא מסומן כהצלחה");

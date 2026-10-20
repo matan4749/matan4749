@@ -306,6 +306,12 @@ export class JobRunner {
       chromeProfileDirectory,
       sharedBrowser,
       cvPath: settings.cvPath || undefined,
+      applicant: {
+        fullNameHe: "מתן עמר",
+        fullNameEn: "Matan Amar",
+        email: settings.reportEmail || "matan4749@gmail.com",
+        city: settings.location || "ישראל",
+      },
       timeoutMs: config.perJobTimeoutMs,
       knowledge: this.learning.getSiteKnowledge(adapterId),
       log: (level, message) => this.log(level, message),

@@ -131,13 +131,17 @@ export const drushimAdapter: SiteAdapter = {
           labelHe: "דרושים",
           started,
           applySelectors: pickSelector(ctx.knowledge, "apply", [
+            '[data-nagish="job-details-apply-button"]',
             '[data-nagish="job-card-apply-link"]',
+            "button:has-text('הגשה')",
             "a:has-text('הגשת מועמדות')",
             "button:has-text('הגשת מועמדות')",
             "a:has-text('שלח/י קורות חיים')",
             "button:has-text('שלח קורות חיים')",
             "a:has-text('הגש מועמדות')",
           ]),
+          requireCvUpload: Boolean(ctx.cvPath),
+          fillProfileFields: true,
           confirmExtra: [
             "text=/המועמדות נשלחה/i",
             "text=/קורות החיים נשלחו/i",

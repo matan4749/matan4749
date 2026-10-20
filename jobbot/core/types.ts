@@ -56,6 +56,15 @@ export interface SiteAdapterContext {
    */
   sharedBrowser?: import("./browser/launch-chrome").LaunchedChrome;
   cvPath?: string;
+  /** Profile fields for career-portal forms (IAI / Elbit Hunter / etc.) */
+  applicant?: {
+    fullNameHe?: string;
+    fullNameEn?: string;
+    email?: string;
+    phone?: string;
+    city?: string;
+    nationalId?: string;
+  };
   timeoutMs: number;
   knowledge: SiteKnowledge;
   log: (level: "info" | "warn" | "error", message: string) => void;

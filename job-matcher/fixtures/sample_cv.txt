@@ -1,0 +1,24 @@
+SAMPLE FIXTURE — not a real person
+
+נועה לוי
+Full-Stack Developer
+ישראל
+
+סיכום
+מפתחת Full-Stack עם ניסיון ב-React, Next.js, TypeScript ו-Python.
+
+ניסיון
+Full-Stack Developer
+2022 - 2026
+בניית מוצר SaaS ב-Next.js, React, TypeScript, Firebase, Stripe. Python לשירותי צד שרת.
+
+Frontend Developer
+2019 - 2022
+React, JavaScript, HTML, CSS. עבודה מול REST APIs.
+
+השכלה
+B.Sc. מדעי המחשב, 2016 - 2019
+
+כישורים
+Next.js, React, TypeScript, JavaScript, Python, Firebase, Stripe, Tailwind, Git
+עברית — שפת אם, אנגלית — גבוהה

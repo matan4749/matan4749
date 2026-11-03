@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
+
+os.environ.setdefault("TK_SILENCE_DEPRECATION", "1")
 
 from job_matcher.cv_parser import CvReadError
 from job_matcher.pipeline import run_match

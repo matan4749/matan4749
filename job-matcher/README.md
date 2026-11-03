@@ -24,9 +24,13 @@ chmod +x run-job-matcher.command
 ./run-job-matcher.command
 ```
 
-ההפעלה הראשונה יוצרת `.venv` ומתקינה את החבילות מ-`requirements.txt`, ואז נפתח החלון.
+ההפעלה הראשונה יוצרת `.venv` ומתקינה את החבילות מ-`requirements.txt`, ואז נפתח החלון. החלון נפתח בגודל המסך כך ששדה הכתובת, קורות החיים, הסף וכפתור ההרצה נשארים למעלה.
 
-First launch creates `.venv`, installs dependencies, and opens the window.
+First launch creates `.venv`, installs dependencies, and opens the window. The window is sized to the screen so the URL field, CV picker, threshold, and run button stay at the top.
+
+Python של macOS (LibreSSL) מדפיס אזהרה עם urllib3 2. הקובץ `requirements.txt` נועל את urllib3 לגרסה 1.26, בלי האזהרה.
+
+macOS system Python (LibreSSL) warns if urllib3 2 is installed. `requirements.txt` pins urllib3 1.26 so that warning is not printed.
 
 ### בלי הקובץ .command / Without the launcher
 

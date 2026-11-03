@@ -223,6 +223,36 @@ class PipelineTests(unittest.TestCase):
         self.assertIn("Python", pdf_profile.text)
         self.assertIsNotNone(pdf_profile.total_years)
 
+    def test_window_keeps_form_on_screen(self) -> None:
+        import tkinter as tk
+
+        from job_matcher.gui import JobMatcherApp
+
+        root = tk.Tk()
+        try:
+            app = JobMatcherApp(root)
+            root.update_idletasks()
+            root.deiconify()
+            root.update()
+            screen_h = root.winfo_screenheight()
+            screen_w = root.winfo_screenwidth()
+            self.assertLessEqual(root.winfo_reqheight(), screen_h)
+            self.assertLessEqual(root.winfo_width(), screen_w)
+            self.assertLessEqual(root.winfo_height(), screen_h)
+            self.assertGreaterEqual(root.winfo_y(), 0)
+            self.assertLess(root.winfo_y() + 80, screen_h)
+            # The run button is on screen and above the detail pane.
+            self.assertGreater(app.run_button.winfo_height(), 1)
+            self.assertGreater(app.url_entry.winfo_height(), 1)
+            self.assertLess(app.run_button.winfo_rooty(), app.detail.winfo_rooty())
+            self.assertLess(app.run_button.winfo_rooty(), screen_h - 40)
+        finally:
+            root.destroy()
+
+    def test_urllib3_stays_on_libressl(self) -> None:
+        text = (ROOT / "requirements.txt").read_text(encoding="utf-8")
+        self.assertIn("urllib3>=1.26.18,<2", text)
+
     def test_gui_lists_matches_descending(self) -> None:
         import tkinter as tk
 

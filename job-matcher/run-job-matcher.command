@@ -2,6 +2,8 @@
 # Double-click this file in Finder, or run it from Terminal, to open the local app.
 set -euo pipefail
 cd "$(dirname "$0")"
+# Apple's system Tk prints a deprecation warning. The app still uses that Tk.
+export TK_SILENCE_DEPRECATION=1
 
 if ! command -v python3 >/dev/null 2>&1; then
   echo "Python 3 is required."

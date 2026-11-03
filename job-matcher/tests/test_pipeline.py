@@ -249,6 +249,12 @@ class PipelineTests(unittest.TestCase):
         finally:
             root.destroy()
 
+    def test_gui_uses_classic_tk(self) -> None:
+        source = (ROOT / "job_matcher" / "gui.py").read_text(encoding="utf-8")
+        self.assertNotIn("ttk.", source)
+        self.assertNotIn("import ttk", source)
+        self.assertNotIn("update_idletasks", source)
+
     def test_urllib3_stays_on_libressl(self) -> None:
         text = (ROOT / "requirements.txt").read_text(encoding="utf-8")
         self.assertIn("urllib3>=1.26.18,<2", text)
@@ -272,9 +278,8 @@ class PipelineTests(unittest.TestCase):
                 app.present(result)
                 root.update_idletasks()
                 rows = []
-                for iid in app.tree.get_children():
-                    value = app.tree.item(iid)["values"][0]
-                    rows.append(int(str(value).rstrip("%")))
+                for line in app.results.get(0, "end"):
+                    rows.append(int(str(line).split("%", 1)[0]))
                 self.assertGreaterEqual(len(rows), 3)
                 self.assertEqual(rows, sorted(rows, reverse=True))
                 app._show(0)

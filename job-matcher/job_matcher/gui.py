@@ -8,7 +8,14 @@ import threading
 import tkinter as tk
 import tkinter.font as tkfont
 from pathlib import Path
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, messagebox
+
+# Explicit light colors. macOS dark mode plus Apple's Tk 8.5 draws light text
+# on a white window, and ttk widgets often do not paint at all. Classic Tk
+# widgets with a forced foreground/background stay visible.
+BG = "#f2f2f2"
+FG = "#1a1a1a"
+FIELD = "#ffffff"
 
 from job_matcher.cv_parser import CvReadError
 from job_matcher.pipeline import run_match, validate_http_url
@@ -33,23 +40,25 @@ def _shape_block(text: str) -> str:
 class JobMatcherApp:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
-        self.root.title("התאמת משרות | Job Matcher")
+        self.root.title("Job Matcher")
+        self.root.configure(bg=BG)
         self.font = self._pick_font(13)
         self.font_bold = self._pick_font(16, "bold")
         self.queue: queue.Queue = queue.Queue()
         self.visible = []
         self.markdown_path = ""
         self.html_path = ""
-        self._placed_on_screen = False
         self._build()
-        # Cap the window before it is mapped. Old macOS Tk otherwise honors a
-        # huge requested height and parks the top of the window off-screen.
-        self._limit_to_screen()
-        self._place_on_screen()
-        self.root.bind("<Map>", self._on_map, add="+")
+        # Size from the screen only. Do not flush the event queue here:
+        # on macOS system Tk that leaves a permanently blank window.
+        self._fit_geometry()
         self.root.after(120, self._poll)
 
     def _pick_font(self, size: int, weight: str = "normal") -> tuple:
+        # Listing font families asks Tk to flush, which blanks the Mac window.
+        if sys.platform == "darwin":
+            family = "Helvetica"
+            return (family, size, weight) if weight != "normal" else (family, size)
         families = set(tkfont.families())
         for name in (
             "Arial Hebrew",
@@ -63,155 +72,150 @@ class JobMatcherApp:
                 return (name, size, weight) if weight != "normal" else (name, size)
         return ("TkDefaultFont", size)
 
-    def _screen_box(self) -> tuple[int, int]:
-        width = self.root.winfo_screenwidth()
-        height = self.root.winfo_screenheight()
-        if width < 640 or height < 480:
-            width, height = max(width, 1280), max(height, 800)
-        return width, height
-
-    def _limit_to_screen(self) -> None:
-        width, height = self._screen_box()
-        self.root.maxsize(width, height)
-        self.root.minsize(min(560, width - 40), min(420, height - 120))
-
-    def _place_on_screen(self) -> None:
-        """Keep the title bar and the form on a normal Mac screen.
-
-        System Tk 8.5 lets ttk.Treeview request a height taller than the
-        display, then the window manager shows the bottom of that window.
-        """
-        self.root.update_idletasks()
-        screen_w, screen_h = self._screen_box()
-        margin_top = 48
-        margin_bottom = 80
-        usable_w = max(560, screen_w - 80)
-        usable_h = max(420, screen_h - margin_top - margin_bottom)
-        width = min(usable_w, max(640, min(self.root.winfo_reqwidth() + 16, 900)))
-        height = min(usable_h, max(520, min(self.root.winfo_reqheight() + 24, 760)))
+    def _fit_geometry(self) -> None:
+        screen_w = self.root.winfo_screenwidth()
+        screen_h = self.root.winfo_screenheight()
+        if screen_w < 400 or screen_h < 400:
+            screen_w, screen_h = 1280, 800
+        width = min(740, max(560, screen_w - 80))
+        height = min(640, max(500, screen_h - 160))
+        if width > screen_w - 20:
+            width = max(320, screen_w - 20)
+        if height > screen_h - 80:
+            height = max(320, screen_h - 80)
         x = max(20, (screen_w - width) // 2)
-        self.root.geometry(f"{int(width)}x{int(height)}+{int(x)}+{margin_top}")
+        self.root.geometry(f"{int(width)}x{int(height)}+{int(x)}+50")
 
-    def _on_map(self, _event=None) -> None:
-        if self._placed_on_screen:
-            return
-        self._placed_on_screen = True
-        self._place_on_screen()
+    def _label(self, parent: tk.Misc, text: str, bold: bool = False) -> tk.Label:
+        return tk.Label(
+            parent,
+            text=_shape(text),
+            bg=BG,
+            fg=FG,
+            font=self.font_bold if bold else self.font,
+            anchor="w",
+            justify="left",
+        )
+
+    def _entry(self, parent: tk.Misc, variable: tk.Variable) -> tk.Entry:
+        return tk.Entry(
+            parent,
+            textvariable=variable,
+            bg=FIELD,
+            fg=FG,
+            insertbackground=FG,
+            font=self.font,
+            highlightbackground="#b0b0b0",
+            highlightthickness=1,
+        )
+
+    def _button(self, parent: tk.Misc, text: str, command) -> tk.Button:
+        return tk.Button(parent, text=_shape(text), command=command, font=self.font)
 
     def _build(self) -> None:
-        if sys.platform != "darwin":
-            style = ttk.Style()
-            if "clam" in style.theme_names():
-                style.theme_use("clam")
-        # pack, not a single weighted grid: the form is packed first so a
-        # too-small window keeps the URL, CV, threshold, and run button.
-        outer = ttk.Frame(self.root, padding=12)
-        outer.pack(side="top", fill="both", expand=True)
+        # Classic Tk only, packed top to bottom. Themed ttk widgets and
+        # Treeview do not paint on the Mac mini's system Tk.
+        pad = tk.Frame(self.root, bg=BG, padx=12, pady=10)
+        pad.pack(side="top", fill="both", expand=True)
 
-        form = ttk.Frame(outer)
-        form.pack(side="top", fill="x")
-        form.columnconfigure(1, weight=1)
-
-        ttk.Label(form, text=_shape("התאמת משרות"), font=self.font_bold).grid(
-            row=0, column=0, columnspan=3, sticky="w"
+        self._label(pad, "התאמת משרות", bold=True).pack(anchor="w")
+        self._label(pad, "משווים דרישות ממודעות ציבוריות לקורות החיים, אצלכם במחשב.").pack(
+            anchor="w", pady=(0, 8)
         )
-        ttk.Label(
-            form,
-            text=_shape("משווים דרישות ממודעות ציבוריות לקורות החיים, אצלכם במחשב."),
-            font=self.font,
-        ).grid(row=1, column=0, columnspan=3, sticky="w", pady=(0, 8))
 
-        ttk.Label(form, text=_shape("כתובת לוח משרות"), font=self.font).grid(
-            row=2, column=0, sticky="e", padx=(0, 8)
-        )
+        self._label(pad, "כתובת לוח משרות").pack(anchor="w")
         self.url_var = tk.StringVar()
-        self.url_entry = ttk.Entry(form, textvariable=self.url_var, font=self.font)
-        self.url_entry.grid(row=2, column=1, columnspan=2, sticky="ew")
+        self.url_entry = self._entry(pad, self.url_var)
+        self.url_entry.pack(fill="x", pady=(0, 6))
         self.url_entry.bind("<Return>", lambda _event: self.run_clicked())
 
-        ttk.Label(form, text=_shape("קורות חיים"), font=self.font).grid(
-            row=3, column=0, sticky="e", padx=(0, 8), pady=6
-        )
+        self._label(pad, "קורות חיים").pack(anchor="w")
+        cv_row = tk.Frame(pad, bg=BG)
+        cv_row.pack(fill="x", pady=(0, 6))
+        self._button(cv_row, "עיון…", self._pick_cv).pack(side="right")
         self.cv_var = tk.StringVar()
-        ttk.Entry(form, textvariable=self.cv_var, font=self.font).grid(
-            row=3, column=1, sticky="ew", pady=6
-        )
-        ttk.Button(form, text=_shape("עיון…"), command=self._pick_cv).grid(
-            row=3, column=2, padx=(8, 0)
-        )
+        self._entry(cv_row, self.cv_var).pack(side="left", fill="x", expand=True, padx=(0, 8))
 
-        ttk.Label(form, text=_shape("סף התאמה %"), font=self.font).grid(
-            row=4, column=0, sticky="e", padx=(0, 8)
-        )
+        threshold_row = tk.Frame(pad, bg=BG)
+        threshold_row.pack(fill="x", pady=(0, 6))
+        self._label(threshold_row, "סף התאמה %").pack(side="left")
         self.threshold_var = tk.IntVar(value=50)
-        ttk.Spinbox(form, from_=0, to=100, textvariable=self.threshold_var, width=6).grid(
-            row=4, column=1, sticky="w"
-        )
+        tk.Spinbox(
+            threshold_row,
+            from_=0,
+            to=100,
+            textvariable=self.threshold_var,
+            width=6,
+            font=self.font,
+            bg=FIELD,
+            fg=FG,
+        ).pack(side="left", padx=8)
 
-        ttk.Label(form, text=_shape("תיקיית דוח"), font=self.font).grid(
-            row=5, column=0, sticky="e", padx=(0, 8), pady=6
-        )
+        self._label(pad, "תיקיית דוח").pack(anchor="w")
+        out_row = tk.Frame(pad, bg=BG)
+        out_row.pack(fill="x", pady=(0, 8))
+        self._button(out_row, "בחירה…", self._pick_out).pack(side="right")
         self.out_var = tk.StringVar(value=str(self._default_out()))
-        ttk.Entry(form, textvariable=self.out_var, font=self.font).grid(
-            row=5, column=1, sticky="ew", pady=6
-        )
-        ttk.Button(form, text=_shape("בחירה…"), command=self._pick_out).grid(
-            row=5, column=2, padx=(8, 0)
-        )
+        self._entry(out_row, self.out_var).pack(side="left", fill="x", expand=True, padx=(0, 8))
 
-        actions = ttk.Frame(form)
-        actions.grid(row=6, column=0, columnspan=3, sticky="ew", pady=(4, 8))
-        self.run_button = ttk.Button(actions, text=_shape("הרץ התאמה"), command=self.run_clicked)
+        actions = tk.Frame(pad, bg=BG)
+        actions.pack(fill="x", pady=(0, 8))
+        self.run_button = self._button(actions, "הרץ התאמה", self.run_clicked)
         self.run_button.pack(side="right")
-        ttk.Button(actions, text=_shape("פתח דוח HTML"), command=self._open_html).pack(
-            side="right", padx=6
-        )
-        ttk.Button(actions, text=_shape("פתח משרה"), command=self._open_job).pack(side="right", padx=6)
+        self._button(actions, "פתח דוח HTML", self._open_html).pack(side="right", padx=6)
+        self._button(actions, "פתח משרה", self._open_job).pack(side="right", padx=6)
         self.status_var = tk.StringVar(value=_shape("מוכן"))
-        ttk.Label(actions, textvariable=self.status_var, font=self.font).pack(side="left")
+        tk.Label(actions, textvariable=self.status_var, bg=BG, fg=FG, font=self.font).pack(side="left")
 
-        results = ttk.Frame(outer)
-        results.pack(side="top", fill="both", expand=True)
-
-        ttk.Label(results, text=_shape("תוצאות"), font=self.font).pack(side="top", anchor="w")
-        # tk.Frame, not ttk: only tk.Frame honors an explicit height, which
-        # stops the Treeview from inflating the window on system Tk.
-        tree_holder = tk.Frame(results, width=640, height=150, borderwidth=0, highlightthickness=0)
-        tree_holder.pack(side="top", fill="both", expand=True, pady=(2, 0))
-        tree_holder.pack_propagate(False)
-        columns = ("percent", "title", "company", "location")
-        self.tree = ttk.Treeview(tree_holder, columns=columns, show="headings", height=6)
-        self.tree.column("#0", width=0, minwidth=0, stretch=False)
-        for key, label, width in (
-            ("percent", "אחוז", 64),
-            ("title", "משרה", 260),
-            ("company", "חברה", 150),
-            ("location", "מיקום", 140),
-        ):
-            self.tree.heading(key, text=_shape(label))
-            self.tree.column(key, width=width, minwidth=40, anchor="e", stretch=True)
-        tree_scroll = ttk.Scrollbar(tree_holder, orient="vertical", command=self.tree.yview)
-        self.tree.configure(yscrollcommand=tree_scroll.set)
-        tree_scroll.pack(side="right", fill="y")
-        self.tree.pack(side="left", fill="both", expand=True)
-        self.tree.bind("<<TreeviewSelect>>", self._on_select)
-
-        ttk.Label(results, text=_shape("פרטי המשרה"), font=self.font).pack(
-            side="top", anchor="w", pady=(8, 2)
+        self._label(pad, "תוצאות").pack(anchor="w")
+        list_row = tk.Frame(pad, bg=BG)
+        list_row.pack(fill="both", expand=True)
+        scroll = tk.Scrollbar(list_row)
+        scroll.pack(side="right", fill="y")
+        self.results = tk.Listbox(
+            list_row,
+            font=self.font,
+            height=6,
+            bg=FIELD,
+            fg=FG,
+            selectbackground="#2f6fed",
+            selectforeground="#ffffff",
+            activestyle="dotbox",
+            exportselection=False,
+            yscrollcommand=scroll.set,
         )
-        text_holder = tk.Frame(results, width=640, height=120, borderwidth=0, highlightthickness=0)
-        text_holder.pack(side="top", fill="both", expand=True)
-        text_holder.pack_propagate(False)
-        self.detail = tk.Text(text_holder, wrap="word", font=self.font, height=6, borderwidth=1)
-        detail_scroll = ttk.Scrollbar(text_holder, orient="vertical", command=self.detail.yview)
-        self.detail.configure(yscrollcommand=detail_scroll.set)
+        self.results.pack(side="left", fill="both", expand=True)
+        scroll.configure(command=self.results.yview)
+        self.results.bind("<<ListboxSelect>>", self._on_select)
+
+        self._label(pad, "פרטי המשרה").pack(anchor="w", pady=(8, 2))
+        text_row = tk.Frame(pad, bg=BG)
+        text_row.pack(fill="both", expand=True)
+        detail_scroll = tk.Scrollbar(text_row)
         detail_scroll.pack(side="right", fill="y")
+        self.detail = tk.Text(
+            text_row,
+            wrap="word",
+            font=self.font,
+            height=6,
+            bg=FIELD,
+            fg=FG,
+            insertbackground=FG,
+            yscrollcommand=detail_scroll.set,
+        )
         self.detail.pack(side="left", fill="both", expand=True)
+        detail_scroll.configure(command=self.detail.yview)
 
         self.report_var = tk.StringVar(value="")
-        ttk.Label(results, textvariable=self.report_var, font=self.font, wraplength=640).pack(
-            side="top", fill="x", pady=(6, 0)
-        )
+        tk.Label(
+            pad,
+            textvariable=self.report_var,
+            bg=BG,
+            fg=FG,
+            font=self.font,
+            wraplength=640,
+            justify="left",
+        ).pack(fill="x", pady=(6, 0))
 
     def _default_out(self) -> Path:
         documents = Path.home() / "Documents"
@@ -255,7 +259,7 @@ class JobMatcherApp:
             messagebox.showerror(_shape("סף"), _shape("הסף צריך להיות מספר בין 0 ל-100."))
             return
         out_dir = Path(self.out_var.get().strip() or self._default_out())
-        self.run_button.state(["disabled"])
+        self.run_button.configure(state="disabled")
         self.status_var.set(_shape("מתחיל…"))
         self.detail.delete("1.0", "end")
 
@@ -281,22 +285,12 @@ class JobMatcherApp:
         self.visible = result.included_jobs()
         self.markdown_path = result.markdown_path
         self.html_path = result.html_path
-        children = self.tree.get_children()
-        if children:
-            self.tree.delete(*children)
-        for index, scored in enumerate(self.visible):
+        self.results.delete(0, "end")
+        for scored in self.visible:
             job = scored.job
-            self.tree.insert(
-                "",
-                "end",
-                iid=str(index),
-                values=(
-                    f"{scored.match_percent}%",
-                    _shape(job.title),
-                    _shape(job.company or "—"),
-                    _shape(job.location or "—"),
-                ),
-            )
+            company = job.company or "—"
+            location = job.location or ""
+            self.results.insert("end", f"{scored.match_percent}%   {job.title}   {company}   {location}")
         below = len(result.below_threshold())
         unscored = len(result.unscored())
         if result.errors:
@@ -312,12 +306,13 @@ class JobMatcherApp:
         saved = f"Markdown: {result.markdown_path}    HTML: {result.html_path}"
         self.report_var.set(saved)
         if self.visible:
-            self.tree.selection_set("0")
-            self.tree.focus("0")
+            self.results.selection_clear(0, "end")
+            self.results.selection_set(0)
+            self.results.activate(0)
             self._show(0)
         elif result.errors:
             self.detail.insert("1.0", _shape_block("\n".join(result.errors + result.notes)))
-        self.run_button.state(["!disabled"])
+        self.run_button.configure(state="normal")
 
     def _show(self, index: int) -> None:
         if index < 0 or index >= len(self.visible):
@@ -327,7 +322,7 @@ class JobMatcherApp:
         self.detail.see("1.0")
 
     def _on_select(self, _event=None) -> None:
-        selected = self.tree.selection()
+        selected = self.results.curselection()
         if not selected:
             return
         self._show(int(selected[0]))
@@ -341,7 +336,7 @@ class JobMatcherApp:
                 elif kind == "ok":
                     self.present(payload)
                 elif kind == "err":
-                    self.run_button.state(["!disabled"])
+                    self.run_button.configure(state="normal")
                     self.status_var.set(_shape("הריצה נעצרה"))
                     messagebox.showerror(_shape("שגיאה"), _shape(str(payload)))
         except queue.Empty:
@@ -355,7 +350,7 @@ class JobMatcherApp:
         open_on_desktop(self.html_path)
 
     def _open_job(self) -> None:
-        selected = self.tree.selection()
+        selected = self.results.curselection()
         if not selected:
             messagebox.showinfo(_shape("משרה"), _shape("בחרו משרה מהרשימה."))
             return

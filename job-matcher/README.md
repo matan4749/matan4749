@@ -24,9 +24,9 @@ chmod +x run-job-matcher.command
 ./run-job-matcher.command
 ```
 
-ההפעלה הראשונה יוצרת `.venv` ומתקינה את החבילות מ-`requirements.txt`, ואז נפתח החלון. החלון נפתח בגודל המסך כך ששדה הכתובת, קורות החיים, הסף וכפתור ההרצה נשארים למעלה.
+ההפעלה הראשונה יוצרת `.venv` ומתקינה את החבילות מ-`requirements.txt`, ואז נפתח החלון. החלון משתמש בבקרים רגילים של Tk (לא ערכת הנושא) עם רקע בהיר וטקסט כהה, כי ה-Tk של macOS לפעמים מצייר חלון לבן ריק. שדה הכתובת, קורות החיים, הסף וכפתור ההרצה נשארים למעלה.
 
-First launch creates `.venv`, installs dependencies, and opens the window. The window is sized to the screen so the URL field, CV picker, threshold, and run button stay at the top.
+First launch creates `.venv`, installs dependencies, and opens the window. The window uses classic Tk controls (not themed widgets) with a light background and dark text, because macOS system Tk often paints a blank white window otherwise. It is sized to the screen so the URL field, CV picker, threshold, and run button stay at the top.
 
 Python של macOS (LibreSSL) מדפיס אזהרה עם urllib3 2. הקובץ `requirements.txt` נועל את urllib3 לגרסה 1.26, בלי האזהרה.
 

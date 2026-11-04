@@ -1,0 +1,11 @@
+beautifulsoup4>=4.12.3
+lxml>=5.2.0
+# urllib3 2 warns (and only supports OpenSSL) on macOS system Python's LibreSSL.
+urllib3>=1.26.18,<2
+requests>=2.31.0
+pypdf>=4.2.0
+python-docx>=1.1.0
+python-bidi>=0.4.2
+# Native macOS window. Apple's system Tk draws a blank pane on the Mac mini.
+pyobjc-core==10.3.2; sys_platform == "darwin"
+pyobjc-framework-Cocoa==10.3.2; sys_platform == "darwin"

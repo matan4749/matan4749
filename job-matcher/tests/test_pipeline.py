@@ -239,6 +239,42 @@ class PipelineTests(unittest.TestCase):
         self.assertIn('pyobjc-framework-Cocoa==10.3.2; sys_platform == "darwin"', requirements)
         self.assertIn("import Cocoa", command)
 
+    def test_appkit_helpers_are_not_selectors(self) -> None:
+        import ast
+
+        tree = ast.parse((ROOT / "job_matcher" / "gui.py").read_text(encoding="utf-8"))
+        window = next(
+            node
+            for node in tree.body
+            if isinstance(node, ast.ClassDef) and node.name == "JobMatcherWindow"
+        )
+
+        def selector_for(name: str) -> str | None:
+            if name.startswith("__") and name.endswith("__"):
+                return None
+            if "_" in name[1:] and not name.endswith("_"):
+                return None
+            value = name.replace("_", ":")
+            if value.startswith(":"):
+                value = "_" + value[1:]
+            return value
+
+        for item in window.body:
+            if not isinstance(item, ast.FunctionDef):
+                continue
+            selector = selector_for(item.name)
+            if selector is None:
+                continue
+            positional = item.args.args[1:]
+            required = len(positional) - len(item.args.defaults)
+            maximum = None if item.args.vararg else len(positional)
+            expected = selector.count(":")
+            self.assertGreaterEqual(expected, required, item.name)
+            if maximum is not None:
+                self.assertLessEqual(expected, maximum, item.name)
+        names = [item.name for item in window.body if isinstance(item, ast.FunctionDef)]
+        self.assertNotIn("_scroll", names)
+
     def test_layout_puts_url_above_the_run_button(self) -> None:
         from job_matcher.present import layout_frames
 

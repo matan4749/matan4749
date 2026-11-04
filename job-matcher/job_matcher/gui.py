@@ -127,12 +127,12 @@ def _title(text: str, color: NSColor, size: float = 13) -> NSAttributedString:
 
 class JobMatcherWindow(NSObject):
     def applicationDidFinishLaunching_(self, _notification) -> None:
-        self.show()
+        self.open_window()
 
     def applicationShouldTerminateAfterLastWindowClosed_(self, _sender) -> bool:
         return True
 
-    def show(self) -> None:
+    def open_window(self) -> None:
         if getattr(self, "_shown", False):
             return
         self._shown = True
@@ -148,22 +148,22 @@ class JobMatcherWindow(NSObject):
         self._scrolled = False
         self.views = {}
         self.buttons = {}
-        self._build()
+        self.build_interface()
         self._ready = True
         self.window.makeKeyAndOrderFront_(None)
-        self.layout(scroll=True)
+        self.place_views(scroll=True)
         NSApp.activateIgnoringOtherApps_(True)
 
     def windowDidResize_(self, _notification) -> None:
         if getattr(self, "_ready", False):
-            self.layout(scroll=False)
+            self.place_views(scroll=False)
 
     def windowWillClose_(self, _notification) -> None:
         timer = getattr(self, "timer", None)
         if timer is not None:
             timer.invalidate()
 
-    def _build(self) -> None:
+    def build_interface(self) -> None:
         screen = NSScreen.mainScreen()
         if screen is None:
             visible_w, visible_h, base_x, base_y = 1440.0, 900.0, 0.0, 0.0
@@ -204,22 +204,22 @@ class JobMatcherWindow(NSObject):
         self.effect.setAutoresizingMask_(NSViewWidthSizable | NSViewHeightSizable)
         content.addSubview_(self.effect)
 
-        self.scroll = self._scroll(content.bounds())
+        self.scroll = self.make_scroll_view(content.bounds())
         self.scroll.setAutoresizingMask_(NSViewWidthSizable | NSViewHeightSizable)
         content.addSubview_(self.scroll)
         self.doc = NSView.alloc().initWithFrame_(content.bounds())
         self.scroll.setDocumentView_(self.doc)
 
-        self._card("url_card")
-        self._card("cv_card")
-        self._card("progress_card")
-        self._card("live_card")
+        self.make_card("url_card")
+        self.make_card("cv_card")
+        self.make_card("progress_card")
+        self.make_card("live_card")
 
-        self._label("title", "התאמת משרות", 22, bold=True, color=TEXT)
-        self._label("subtitle", "משווים דרישות ממשרות ציבוריות לקורות החיים, אצלכם במחשב.", 13, color=MUTED)
-        self._label("url_label", "לוח משרות", 14, bold=True, color=TEXT)
-        self._label("url_hint", "הדבק כאן כתובת http או https של לוח המשרות.", 12, color=MUTED)
-        self.url_field = self._field(16)
+        self.make_label("title", "התאמת משרות", 22, bold=True, color=TEXT)
+        self.make_label("subtitle", "משווים דרישות ממשרות ציבוריות לקורות החיים, אצלכם במחשב.", 13, color=MUTED)
+        self.make_label("url_label", "לוח משרות", 14, bold=True, color=TEXT)
+        self.make_label("url_hint", "הדבק כאן כתובת http או https של לוח המשרות.", 12, color=MUTED)
+        self.url_field = self.make_field(16)
         self.url_field.setPlaceholderString_("https://")
         self.url_field.setDelegate_(self)
         self.url_field.setTarget_(self)
@@ -227,39 +227,39 @@ class JobMatcherWindow(NSObject):
         self.views["url_field"] = self.url_field
         self.doc.addSubview_(self.url_field)
 
-        self._label("cv_label", "קורות חיים", 14, bold=True, color=TEXT)
-        self.cv_field = self._field(13)
+        self.make_label("cv_label", "קורות חיים", 14, bold=True, color=TEXT)
+        self.cv_field = self.make_field(13)
         self.cv_field.setDelegate_(self)
         self.views["cv_field"] = self.cv_field
         self.doc.addSubview_(self.cv_field)
-        self._button("cv_button", "עיון…", "pickCv:", GHOST, TEXT)
-        self._label("preview_label", "תצוגה מקדימה", 12, color=MUTED)
-        self.preview_scroll, self.preview = self._reader()
+        self.make_button("cv_button", "עיון…", "pickCv:", GHOST, TEXT)
+        self.make_label("preview_label", "תצוגה מקדימה", 12, color=MUTED)
+        self.preview_scroll, self.preview = self.make_text_pane()
         self.views["preview"] = self.preview_scroll
         self.doc.addSubview_(self.preview_scroll)
 
-        self._label("threshold_label", "סף התאמה %", 13, color=TEXT)
-        self.threshold_field = self._field(13)
+        self.make_label("threshold_label", "סף התאמה %", 13, color=TEXT)
+        self.threshold_field = self.make_field(13)
         self.threshold_field.setStringValue_("50")
         self.threshold_field.setDelegate_(self)
         self.views["threshold_field"] = self.threshold_field
         self.doc.addSubview_(self.threshold_field)
-        self._label("out_label", "תיקיית דוח", 13, color=TEXT)
-        self.out_field = self._field(13)
+        self.make_label("out_label", "תיקיית דוח", 13, color=TEXT)
+        self.out_field = self.make_field(13)
         self.out_field.setStringValue_(str(default_out_dir()))
         self.out_field.setDelegate_(self)
         self.views["out_field"] = self.out_field
         self.doc.addSubview_(self.out_field)
-        self._button("out_button", "בחירה…", "pickOut:", GHOST, TEXT)
+        self.make_button("out_button", "בחירה…", "pickOut:", GHOST, TEXT)
 
-        self._button("clear", "נקה", "clearClicked:", GHOST, TEXT)
-        self._button("open_job", "פתח משרה", "openJob:", GHOST, TEXT)
-        self._button("open_report", "פתח דוח", "openReport:", GHOST, TEXT)
-        self._button("run", "הרץ התאמה", "runClicked:", ACCENT, WHITE, accent=True)
+        self.make_button("clear", "נקה", "clearClicked:", GHOST, TEXT)
+        self.make_button("open_job", "פתח משרה", "openJob:", GHOST, TEXT)
+        self.make_button("open_report", "פתח דוח", "openReport:", GHOST, TEXT)
+        self.make_button("run", "הרץ התאמה", "runClicked:", ACCENT, WHITE, accent=True)
 
-        self._label("status", "מוכן", 12, color=MUTED)
-        self._label("jobs", "נמצאו 0", 13, color=TEXT)
-        self._label("elapsed", "0:00", 13, color=TEXT)
+        self.make_label("status", "מוכן", 12, color=MUTED)
+        self.make_label("jobs", "נמצאו 0", 13, color=TEXT)
+        self.make_label("elapsed", "0:00", 13, color=TEXT)
         self.bar = NSProgressIndicator.alloc().initWithFrame_(NSMakeRect(0, 0, 10, 12))
         self.bar.setStyle_(NSProgressIndicatorBarStyle)
         self.bar.setIndeterminate_(False)
@@ -269,20 +269,20 @@ class JobMatcherWindow(NSObject):
         self.views["bar"] = self.bar
         self.doc.addSubview_(self.bar)
 
-        self._label("live_label", "העמוד שנשלף עכשיו", 12, color=MUTED)
+        self.make_label("live_label", "העמוד שנשלף עכשיו", 12, color=MUTED)
         self.live_url = self._label_view("live_url", "", 13, ACCENT)
         self.views["live_url"] = self.live_url
         self.live_url.setSelectable_(True)
-        self.live_scroll, self.live_snippet = self._reader()
+        self.live_scroll, self.live_snippet = self.make_text_pane()
         self.views["live_snippet"] = self.live_scroll
         self.doc.addSubview_(self.live_scroll)
 
-        self._label("results_label", "תוצאות", 14, bold=True, color=TEXT)
-        self._label("detail_label", "פרטי המשרה", 14, bold=True, color=TEXT)
-        self.results_scroll, self.table = self._table()
+        self.make_label("results_label", "תוצאות", 14, bold=True, color=TEXT)
+        self.make_label("detail_label", "פרטי המשרה", 14, bold=True, color=TEXT)
+        self.results_scroll, self.table = self.make_results_table()
         self.views["results"] = self.results_scroll
         self.doc.addSubview_(self.results_scroll)
-        self.detail_scroll, self.detail = self._reader()
+        self.detail_scroll, self.detail = self.make_text_pane()
         self.views["detail"] = self.detail_scroll
         self.doc.addSubview_(self.detail_scroll)
         self.report_label = self._label_view("report", "", 12, MUTED)
@@ -291,12 +291,12 @@ class JobMatcherWindow(NSObject):
 
         self._set_text(self.preview, "לא נבחר קובץ.")
         self._set_text(self.live_snippet, "מחכה לשליפה.")
-        self._load()
+        self.load_saved_state()
         self.timer = NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
             0.2, self, "tick:", None, True
         )
 
-    def _scroll(self, frame):
+    def make_scroll_view(self, frame):
         scroll = NSScrollView.alloc().initWithFrame_(frame)
         scroll.setHasVerticalScroller_(True)
         scroll.setAutohidesScrollers_(True)
@@ -320,7 +320,7 @@ class JobMatcherWindow(NSObject):
             except AttributeError:
                 pass
 
-    def _card(self, name: str) -> None:
+    def make_card(self, name: str) -> None:
         box = NSBox.alloc().initWithFrame_(NSMakeRect(0, 0, 10, 10))
         box.setBoxType_(NSBoxCustom)
         box.setTitlePosition_(NSNoTitle)
@@ -336,7 +336,7 @@ class JobMatcherWindow(NSObject):
         self.views[name] = box
         self.doc.addSubview_(box)
 
-    def _label(self, name: str, text: str, size: float, bold: bool = False, color: NSColor = TEXT) -> None:
+    def make_label(self, name: str, text: str, size: float, bold: bool = False, color: NSColor = TEXT) -> None:
         self.views[name] = self._label_view(name, text, size, color, bold=bold)
 
     def _label_view(self, name: str, text: str, size: float, color: NSColor, bold: bool = False):
@@ -364,7 +364,7 @@ class JobMatcherWindow(NSObject):
         self.doc.addSubview_(field)
         return field
 
-    def _field(self, size: float):
+    def make_field(self, size: float):
         field = NSTextField.alloc().initWithFrame_(NSMakeRect(0, 0, 10, 10))
         field.setBezelStyle_(NSTextFieldRoundedBezel)
         field.setBezeled_(True)
@@ -381,7 +381,7 @@ class JobMatcherWindow(NSObject):
             pass
         return field
 
-    def _button(self, name: str, text: str, action: str, fill: NSColor, title_color: NSColor, accent: bool = False) -> None:
+    def make_button(self, name: str, text: str, action: str, fill: NSColor, title_color: NSColor, accent: bool = False) -> None:
         box = NSBox.alloc().initWithFrame_(NSMakeRect(0, 0, 10, 10))
         box.setBoxType_(NSBoxCustom)
         box.setTitlePosition_(NSNoTitle)
@@ -413,8 +413,8 @@ class JobMatcherWindow(NSObject):
         self.doc.addSubview_(box)
         self.doc.addSubview_(button)
 
-    def _reader(self):
-        scroll = self._scroll(NSMakeRect(0, 0, 10, 10))
+    def make_text_pane(self):
+        scroll = self.make_scroll_view(NSMakeRect(0, 0, 10, 10))
         text = NSTextView.alloc().initWithFrame_(NSMakeRect(0, 0, 10, 10))
         text.setEditable_(False)
         text.setSelectable_(True)
@@ -434,8 +434,8 @@ class JobMatcherWindow(NSObject):
         scroll.setDocumentView_(text)
         return scroll, text
 
-    def _table(self):
-        scroll = self._scroll(NSMakeRect(0, 0, 10, 10))
+    def make_results_table(self):
+        scroll = self.make_scroll_view(NSMakeRect(0, 0, 10, 10))
         table = NSTableView.alloc().initWithFrame_(NSMakeRect(0, 0, 10, 10))
         column = NSTableColumn.alloc().initWithIdentifier_("job")
         column.setEditable_(False)
@@ -455,7 +455,7 @@ class JobMatcherWindow(NSObject):
         scroll.setDocumentView_(table)
         return scroll, table
 
-    def layout(self, scroll: bool = False) -> None:
+    def place_views(self, scroll: bool = False) -> None:
         bounds = self.window.contentView().bounds()
         self.effect.setFrame_(bounds)
         self.scroll.setFrame_(bounds)
@@ -502,7 +502,7 @@ class JobMatcherWindow(NSObject):
         color = meta["title"] if enabled else MUTED
         meta["button"].setAttributedTitle_(_title(meta["text"], color))
 
-    def _load(self) -> None:
+    def load_saved_state(self) -> None:
         data = load_state()
         url = data.get("url")
         if isinstance(url, str) and url.strip():
@@ -521,7 +521,7 @@ class JobMatcherWindow(NSObject):
         if threshold is not None and 0 <= threshold <= 100:
             self.threshold_field.setStringValue_(str(threshold))
 
-    def _remember(self) -> None:
+    def save_form_state(self) -> None:
         try:
             threshold = int(float(self.threshold_field.stringValue()))
         except (TypeError, ValueError):
@@ -541,7 +541,7 @@ class JobMatcherWindow(NSObject):
     def controlTextDidEndEditing_(self, notification) -> None:
         if notification.object() == self.cv_field:
             self._show_cv(str(self.cv_field.stringValue() or ""))
-        self._remember()
+        self.save_form_state()
 
     def pickCv_(self, _sender) -> None:
         panel = NSOpenPanel.openPanel()
@@ -555,7 +555,7 @@ class JobMatcherWindow(NSObject):
         path = str(panel.URLs()[0].path())
         self.cv_field.setStringValue_(path)
         self._show_cv(path)
-        self._remember()
+        self.save_form_state()
 
     def pickOut_(self, _sender) -> None:
         panel = NSOpenPanel.openPanel()
@@ -567,7 +567,7 @@ class JobMatcherWindow(NSObject):
         if panel.runModal() != NSModalResponseOK or not panel.URLs():
             return
         self.out_field.setStringValue_(str(panel.URLs()[0].path()))
-        self._remember()
+        self.save_form_state()
 
     def clearClicked_(self, _sender) -> None:
         self.running = False
@@ -591,20 +591,20 @@ class JobMatcherWindow(NSObject):
         try:
             url = validate_http_url(str(self.url_field.stringValue() or ""))
         except ValueError as exc:
-            self._alert("כתובת", str(exc))
+            self.show_alert("כתובת", str(exc))
             return
         cv_path = Path(str(self.cv_field.stringValue() or "").strip())
         if cv_path.suffix.lower() not in {".pdf", ".docx", ".txt"} or not cv_path.is_file():
-            self._alert("קורות חיים", "בחרו קובץ PDF, DOCX או TXT קיים.")
+            self.show_alert("קורות חיים", "בחרו קובץ PDF, DOCX או TXT קיים.")
             return
         try:
             threshold = float(self.threshold_field.stringValue())
         except (TypeError, ValueError):
-            self._alert("סף", "הסף צריך להיות מספר בין 0 ל-100.")
+            self.show_alert("סף", "הסף צריך להיות מספר בין 0 ל-100.")
             return
         out_dir = Path(str(self.out_field.stringValue() or "").strip() or default_out_dir())
         self._show_cv(str(cv_path))
-        self._remember()
+        self.save_form_state()
         self.running = True
         self.started = time.monotonic()
         self._set_enabled("run", False)
@@ -647,13 +647,13 @@ class JobMatcherWindow(NSObject):
                 elif kind == "watch":
                     self._apply_watch(payload)
                 elif kind == "ok":
-                    self._present(payload)
+                    self.show_match_result(payload)
                 elif kind == "err":
                     self.running = False
                     self._set_enabled("run", True)
                     self.views["status"].setStringValue_("הריצה נעצרה")
                     self._set_text(self.live_snippet, str(payload))
-                    self._alert("שגיאה", str(payload))
+                    self.show_alert("שגיאה", str(payload))
         except queue.Empty:
             pass
 
@@ -668,7 +668,7 @@ class JobMatcherWindow(NSObject):
         if view["fraction"] is not None:
             self.bar.setDoubleValue_(view["fraction"])
 
-    def _present(self, result) -> None:
+    def show_match_result(self, result) -> None:
         if self.running and self.started:
             seconds = max(0, int(time.monotonic() - self.started))
             self.views["elapsed"].setStringValue_(f"{seconds // 60}:{seconds % 60:02d}")
@@ -713,18 +713,18 @@ class JobMatcherWindow(NSObject):
 
     def openReport_(self, _sender) -> None:
         if not self.html_path:
-            self._alert("דוח", "עדיין אין דוח. הריצו התאמה קודם.")
+            self.show_alert("דוח", "עדיין אין דוח. הריצו התאמה קודם.")
             return
         _open_target(self.html_path)
 
     def openJob_(self, _sender) -> None:
         row = self.table.selectedRow()
         if row < 0 or row >= len(self.visible):
-            self._alert("משרה", "בחרו משרה מהרשימה.")
+            self.show_alert("משרה", "בחרו משרה מהרשימה.")
             return
         _open_target(self.visible[int(row)].job.url)
 
-    def _alert(self, title: str, message: str) -> None:
+    def show_alert(self, title: str, message: str) -> None:
         alert = NSAlert.alloc().init()
         alert.setMessageText_(title)
         alert.setInformativeText_(message)
@@ -783,5 +783,5 @@ def run_gui() -> None:
     _KEEP["window"] = window
     app.setDelegate_(window)
     _install_menu(app)
-    window.show()
+    window.open_window()
     AppHelper.runEventLoop()

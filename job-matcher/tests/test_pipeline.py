@@ -223,37 +223,43 @@ class PipelineTests(unittest.TestCase):
         self.assertIn("Python", pdf_profile.text)
         self.assertIsNotNone(pdf_profile.total_years)
 
-    def test_window_keeps_form_on_screen(self) -> None:
-        import tkinter as tk
+    def test_window_uses_appkit(self) -> None:
+        gui = (ROOT / "job_matcher" / "gui.py").read_text(encoding="utf-8")
+        cli = (ROOT / "job_matcher" / "cli.py").read_text(encoding="utf-8")
+        command = (ROOT / "run-job-matcher.command").read_text(encoding="utf-8")
+        requirements = (ROOT / "requirements.txt").read_text(encoding="utf-8")
+        for source in (gui, cli, command):
+            self.assertNotIn("tkinter", source.lower())
+            self.assertNotIn("ttk.", source)
+        self.assertIn("NSApplication", gui)
+        self.assertIn("NSVisualEffectView", gui)
+        self.assertNotIn("WebKit", gui)
+        self.assertNotIn("WKWebView", gui)
+        self.assertIn('pyobjc-core==10.3.2; sys_platform == "darwin"', requirements)
+        self.assertIn('pyobjc-framework-Cocoa==10.3.2; sys_platform == "darwin"', requirements)
+        self.assertIn("import Cocoa", command)
 
-        from job_matcher.gui import JobMatcherApp
+    def test_layout_puts_url_above_the_run_button(self) -> None:
+        from job_matcher.present import layout_frames
 
-        root = tk.Tk()
-        try:
-            app = JobMatcherApp(root)
-            root.update_idletasks()
-            root.deiconify()
-            root.update()
-            screen_h = root.winfo_screenheight()
-            screen_w = root.winfo_screenwidth()
-            self.assertLessEqual(root.winfo_reqheight(), screen_h)
-            self.assertLessEqual(root.winfo_width(), screen_w)
-            self.assertLessEqual(root.winfo_height(), screen_h)
-            self.assertGreaterEqual(root.winfo_y(), 0)
-            self.assertLess(root.winfo_y() + 80, screen_h)
-            # The run button is on screen and above the detail pane.
-            self.assertGreater(app.run_button.winfo_height(), 1)
-            self.assertGreater(app.url_entry.winfo_height(), 1)
-            self.assertLess(app.run_button.winfo_rooty(), app.detail.winfo_rooty())
-            self.assertLess(app.run_button.winfo_rooty(), screen_h - 40)
-        finally:
-            root.destroy()
+        frames, height = layout_frames(1000)
+        self.assertGreater(height, 0)
 
-    def test_gui_uses_classic_tk(self) -> None:
-        source = (ROOT / "job_matcher" / "gui.py").read_text(encoding="utf-8")
-        self.assertNotIn("ttk.", source)
-        self.assertNotIn("import ttk", source)
-        self.assertNotIn("update_idletasks", source)
+        def top(name: str) -> float:
+            _x, y, _w, h = frames[name]
+            return y + h
+
+        self.assertGreaterEqual(frames["url_field"][3], 36)
+        self.assertGreater(frames["preview"][3], 40)
+        self.assertGreater(top("url_field"), top("run"))
+        self.assertGreater(top("run"), top("detail"))
+        self.assertGreater(top("preview"), top("run"))
+        for name, (x, y, w, h) in frames.items():
+            self.assertGreaterEqual(x, 0, name)
+            self.assertGreaterEqual(y, 0, name)
+            self.assertGreater(w, 0, name)
+            self.assertGreater(h, 0, name)
+            self.assertLessEqual(x + w, 1001, name)
 
     def test_urllib3_stays_on_libressl(self) -> None:
         text = (ROOT / "requirements.txt").read_text(encoding="utf-8")
@@ -274,43 +280,29 @@ class PipelineTests(unittest.TestCase):
         self.assertGreaterEqual(max(int(event.get("jobs") or 0) for event in events), 1)
         self.assertTrue(any(event.get("snippet") for event in events))
 
-    def test_cv_preview_and_drawn_buttons(self) -> None:
-        import tkinter as tk
+    def test_cv_preview_and_live_page_text(self) -> None:
+        from job_matcher.present import cv_preview_text, jobs_found_label, watch_view
 
-        from job_matcher.gui import BG, GlassButton, JobMatcherApp
-
-        root = tk.Tk()
-        root.withdraw()
-        try:
-            app = JobMatcherApp(root)
-            self.assertEqual(app.root.cget("bg"), BG)
-            self.assertNotEqual(app.url_entry.cget("bg"), "#ffffff")
-            self.assertIsInstance(app.run_button, GlassButton)
-            app.run_button.configure(state="disabled")
-            app.run_button.configure(state="normal")
-            app._show_cv(str(CV))
-            preview = app.cv_preview.get("1.0", "end")
-            self.assertIn("sample_cv.txt", preview)
-            self.assertIn("TXT", preview)
-            self.assertIn("React", preview)
-            app._apply_watch(
-                {
-                    "url": "https://example.com/jobs/1",
-                    "snippet": "Backend Engineer Python",
-                    "jobs": 2,
-                    "fraction": 0.4,
-                }
-            )
-            self.assertIn("example.com", app.live_url.get())
-            self.assertIn("Backend", app.live_snippet.get("1.0", "end"))
-            self.assertIn("2", app.jobs_var.get())
-        finally:
-            root.destroy()
+        preview = cv_preview_text(str(CV))
+        self.assertIn("sample_cv.txt", preview)
+        self.assertIn("TXT", preview)
+        self.assertIn("React", preview)
+        view = watch_view(
+            {
+                "url": "https://example.com/jobs/1",
+                "snippet": "Backend Engineer Python",
+                "jobs": 2,
+                "fraction": 0.4,
+            }
+        )
+        self.assertIn("example.com", view["url"])
+        self.assertIn("Backend", view["snippet"])
+        self.assertEqual(view["jobs"], 2)
+        self.assertEqual(view["fraction"], 0.4)
+        self.assertIn("2", jobs_found_label(view["jobs"]))
 
     def test_gui_lists_matches_descending(self) -> None:
-        import tkinter as tk
-
-        from job_matcher.gui import JobMatcherApp
+        from job_matcher.present import detail_text, result_lines
 
         with tempfile.TemporaryDirectory() as tmp:
             result = run_match(
@@ -319,23 +311,12 @@ class PipelineTests(unittest.TestCase):
                 threshold=50,
                 out_dir=Path(tmp),
             )
-            root = tk.Tk()
-            root.withdraw()
-            try:
-                app = JobMatcherApp(root)
-                app.present(result)
-                root.update_idletasks()
-                rows = []
-                for line in app.results.get(0, "end"):
-                    rows.append(int(str(line).split("%", 1)[0]))
-                self.assertGreaterEqual(len(rows), 3)
-                self.assertEqual(rows, sorted(rows, reverse=True))
-                app._show(0)
-                detail = app.detail.get("1.0", "end")
-                self.assertIn("%", detail)
-                self.assertTrue("job-" in detail or "file:" in detail or "http" in detail.lower())
-            finally:
-                root.destroy()
+            rows = [int(line.split("%", 1)[0]) for line in result_lines(result)]
+            self.assertGreaterEqual(len(rows), 3)
+            self.assertEqual(rows, sorted(rows, reverse=True))
+            detail = detail_text(result, 0)
+            self.assertIn("%", detail)
+            self.assertTrue("job-" in detail or "file:" in detail or "http" in detail.lower())
 
 
 def _pdf_bytes(text: str) -> bytes:

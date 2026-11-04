@@ -1,11 +1,8 @@
 from __future__ import annotations
 
 import argparse
-import os
 import sys
 from pathlib import Path
-
-os.environ.setdefault("TK_SILENCE_DEPRECATION", "1")
 
 from job_matcher.cv_parser import CvReadError
 from job_matcher.pipeline import run_match
@@ -63,18 +60,23 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _launch_gui() -> int:
-    try:
-        import tkinter  # noqa: F401
-    except ImportError:
+    if sys.platform != "darwin":
         print(
-            "Tkinter חסר, ולכן אי אפשר לפתוח את החלון.\n"
-            "On a Mac, install Python from https://www.python.org/downloads/macos/ (it includes Tk),\n"
-            "or run: brew install python-tk",
+            "חלון האפליקציה הוא חלון macOS ‏(AppKit). "
+            "במחשב הזה הריצו עם --url או --html ועם --cv.",
             file=sys.stderr,
         )
         return 1
-    from job_matcher.gui import run_gui
-
+    try:
+        from job_matcher.gui import run_gui
+    except ImportError as exc:
+        print(
+            "AppKit לא מותקן, ולכן אי אפשר לפתוח את החלון.\n"
+            "הריצו שוב את run-job-matcher.command כדי להתקין את PyObjC.\n"
+            f"{exc}",
+            file=sys.stderr,
+        )
+        return 1
     run_gui()
     return 0
 

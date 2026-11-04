@@ -1,629 +1,620 @@
 from __future__ import annotations
 
-import json
 import queue
-import re
-import subprocess
 import sys
 import threading
 import time
-import tkinter as tk
-import tkinter.font as tkfont
 from pathlib import Path
-from tkinter import filedialog, messagebox
 
-# Forced colors. Apple's system Tk paints themed widgets as empty space, and
-# dark mode paints light text on a white window. Every control below sets its
-# own foreground and background so the form stays visible.
-BG = "#070b14"
-PANEL = "#121826"
-FIELD = "#0c121c"
-TEXT = "#e8f0ff"
-MUTED = "#93a4c3"
-ACCENT = "#3d7eff"
-ACCENT_HOT = "#6aa2ff"
-EDGE = "#2c3a52"
-GHOST = "#182338"
-GHOST_HOT = "#22304a"
+from Cocoa import (
+    NSAlert,
+    NSApp,
+    NSApplication,
+    NSApplicationActivationPolicyRegular,
+    NSAppearance,
+    NSAppearanceNameDarkAqua,
+    NSAttributedString,
+    NSBackingStoreBuffered,
+    NSBezelStyleRounded,
+    NSBox,
+    NSBoxCustom,
+    NSColor,
+    NSFocusRingTypeNone,
+    NSFont,
+    NSFontAttributeName,
+    NSForegroundColorAttributeName,
+    NSIndexSet,
+    NSLineBorder,
+    NSMakePoint,
+    NSMakeRect,
+    NSMakeSize,
+    NSMenu,
+    NSMenuItem,
+    NSModalResponseOK,
+    NSMutableParagraphStyle,
+    NSNoTitle,
+    NSObject,
+    NSOpenPanel,
+    NSParagraphStyleAttributeName,
+    NSProgressIndicator,
+    NSProgressIndicatorBarStyle,
+    NSScreen,
+    NSScrollView,
+    NSScrollerKnobStyleLight,
+    NSTableColumn,
+    NSTableView,
+    NSTableViewLastColumnOnlyAutoresizingStyle,
+    NSTextAlignmentCenter,
+    NSTextField,
+    NSTextFieldRoundedBezel,
+    NSTextView,
+    NSTimer,
+    NSView,
+    NSURL,
+    NSViewHeightSizable,
+    NSViewWidthSizable,
+    NSVisualEffectBlendingModeWithinWindow,
+    NSVisualEffectMaterialHUDWindow,
+    NSVisualEffectStateActive,
+    NSVisualEffectView,
+    NSWindow,
+    NSWindowStyleMaskClosable,
+    NSWindowStyleMaskMiniaturizable,
+    NSWindowStyleMaskResizable,
+    NSWindowStyleMaskTitled,
+    NSWorkspace,
+)
+from PyObjCTools import AppHelper
 
-STATE_PATH = Path.home() / ".job-matcher" / "state.json"
-
-from job_matcher.cv_parser import CvReadError, parse_cv
+from job_matcher.cv_parser import CvReadError
 from job_matcher.pipeline import run_match, validate_http_url
-from job_matcher.report import format_job_plain
+from job_matcher.present import (
+    cv_preview_text,
+    default_out_dir,
+    detail_text,
+    jobs_found_label,
+    layout_frames,
+    load_state,
+    result_lines,
+    save_state,
+    status_text,
+    watch_view,
+)
+
+# Native macOS window. Apple's older window toolkit draws a blank white pane
+# on the Mac mini, so every control here is AppKit.
 
 
-def _shape(text: str) -> str:
-    """Linux Tk does not shape Hebrew. macOS Tk does, so leave it alone there."""
-    if sys.platform == "darwin" or not re.search(r"[\u0590-\u05FF]", text):
-        return text
-    try:
-        from bidi.algorithm import get_display
-
-        return get_display(text)
-    except Exception:
-        return text
+def _color(red: int, green: int, blue: int, alpha: float = 1.0):
+    return NSColor.colorWithCalibratedRed_green_blue_alpha_(red / 255.0, green / 255.0, blue / 255.0, alpha)
 
 
-def _shape_block(text: str) -> str:
-    return "\n".join(_shape(line) for line in text.splitlines())
+NAVY = CARD = FIELD = TEXT = MUTED = ACCENT = ACCENT_DIM = GHOST = GHOST_DIM = EDGE = WHITE = None
 
 
-class GlassButton(tk.Canvas):
-    """Rounded button drawn on a canvas. Classic Tk buttons stay gray and flat."""
+def _ensure_colors() -> None:
+    """NSColor is only safe after NSApplication exists."""
+    global NAVY, CARD, FIELD, TEXT, MUTED, ACCENT, ACCENT_DIM, GHOST, GHOST_DIM, EDGE, WHITE
+    if NAVY is not None:
+        return
+    NAVY = _color(7, 11, 20)
+    CARD = _color(18, 24, 38, 0.92)
+    FIELD = _color(12, 18, 28)
+    TEXT = _color(232, 240, 255)
+    MUTED = _color(147, 164, 195)
+    ACCENT = _color(61, 126, 255)
+    ACCENT_DIM = _color(36, 58, 102)
+    GHOST = _color(24, 35, 56)
+    GHOST_DIM = _color(20, 26, 38)
+    EDGE = _color(44, 58, 82)
+    WHITE = _color(247, 251, 255)
 
-    def __init__(
-        self,
-        parent: tk.Misc,
-        text: str,
-        command,
-        font,
-        *,
-        accent: bool = False,
-    ) -> None:
-        self._accent = accent
-        self._enabled = True
-        self._hover = False
-        self._command = command
-        self._label = text
-        self._font = font
-        width = self._measure(text, font)
-        super().__init__(
-            parent,
-            width=width,
-            height=34,
-            bg=_widget_bg(parent),
-            highlightthickness=0,
-            bd=0,
-            cursor="hand2",
-        )
-        self.bind("<Button-1>", self._click)
-        self.bind("<Enter>", self._enter)
-        self.bind("<Leave>", self._leave)
-        self.bind("<Configure>", self._draw)
-        self._draw()
-
-    @staticmethod
-    def _measure(text: str, font) -> int:
-        try:
-            pixels = tkfont.Font(font=font).measure(text)
-        except tk.TclError:
-            pixels = len(text) * 9
-        return max(84, min(196, pixels + 32))
-
-    def set_enabled(self, enabled: bool) -> None:
-        self._enabled = enabled
-        tk.Canvas.configure(self, cursor="hand2" if enabled else "arrow")
-        self._draw()
-
-    def configure(self, cnf=None, **kwargs):
-        if isinstance(cnf, dict) and "state" in cnf:
-            cnf = dict(cnf)
-            self.set_enabled(str(cnf.pop("state")) != "disabled")
-        if "state" in kwargs:
-            self.set_enabled(str(kwargs.pop("state")) != "disabled")
-        if cnf or kwargs:
-            return tk.Canvas.configure(self, cnf, **kwargs)
-        if cnf is None and not kwargs:
-            return tk.Canvas.configure(self)
-        return None
-
-    def _click(self, _event=None) -> None:
-        if self._enabled and self._command is not None:
-            self._command()
-
-    def _enter(self, _event=None) -> None:
-        self._hover = True
-        self._draw()
-
-    def _leave(self, _event=None) -> None:
-        self._hover = False
-        self._draw()
-
-    def _colors(self) -> tuple[str, str, str]:
-        if not self._enabled:
-            return "#1c2433", "#2a3548", "#6d7b93"
-        if self._accent:
-            fill = ACCENT_HOT if self._hover else ACCENT
-            return fill, fill, "#f7fbff"
-        fill = GHOST_HOT if self._hover else GHOST
-        return fill, "#4c6fa8", TEXT
-
-    def _draw(self, event=None) -> None:
-        self.delete("all")
-        width = event.width if event is not None else self.winfo_width()
-        height = event.height if event is not None else self.winfo_height()
-        if width < 8:
-            width = int(self["width"])
-        if height < 8:
-            height = int(self["height"])
-        fill, outline, fg = self._colors()
-        radius = 8
-        points = [
-            radius, 1,
-            width - radius, 1,
-            width - 2, 1,
-            width - 2, radius,
-            width - 2, height - radius,
-            width - 2, height - 2,
-            width - radius, height - 2,
-            radius, height - 2,
-            2, height - 2,
-            2, height - radius,
-            2, radius,
-            2, 1,
-        ]
-        self.create_polygon(points, smooth=True, fill=fill, outline=outline, width=1)
-        self.create_text(width / 2, height / 2, text=self._label, fill=fg, font=self._font)
+_KEEP: dict = {}
 
 
-def _widget_bg(widget: tk.Misc) -> str:
-    try:
-        return str(widget.cget("bg"))
-    except tk.TclError:
-        return BG
+def _title(text: str, color: NSColor, size: float = 13) -> NSAttributedString:
+    style = NSMutableParagraphStyle.alloc().init()
+    style.setAlignment_(NSTextAlignmentCenter)
+    return NSAttributedString.alloc().initWithString_attributes_(
+        text,
+        {
+            NSFontAttributeName: NSFont.systemFontOfSize_(size),
+            NSForegroundColorAttributeName: color,
+            NSParagraphStyleAttributeName: style,
+        },
+    )
 
 
-class JobMatcherApp:
-    def __init__(self, root: tk.Tk) -> None:
-        self.root = root
-        self.root.title("Job Matcher")
-        self.root.configure(bg=BG)
-        self.font = self._pick_font(12)
-        self.font_bold = self._pick_font(16, "bold")
-        self.font_url = self._pick_font(14)
-        self.queue: queue.Queue = queue.Queue()
+class JobMatcherWindow(NSObject):
+    def applicationDidFinishLaunching_(self, _notification) -> None:
+        self.show()
+
+    def applicationShouldTerminateAfterLastWindowClosed_(self, _sender) -> bool:
+        return True
+
+    def show(self) -> None:
+        if getattr(self, "_shown", False):
+            return
+        self._shown = True
+        _ensure_colors()
+        self.lines: list[str] = []
         self.visible = []
+        self.queue: queue.Queue = queue.Queue()
+        self.running = False
+        self.started = 0.0
         self.markdown_path = ""
         self.html_path = ""
-        self._running = False
-        self._started = 0.0
-        self._fraction = 0.0
+        self._ready = False
+        self._scrolled = False
+        self.views = {}
+        self.buttons = {}
         self._build()
-        self._load_state()
-        # Size from the screen only. Flushing the event queue before the
-        # window loop starts leaves a permanently blank window on macOS.
-        self._fit_geometry()
-        self.root.after(120, self._poll)
+        self._ready = True
+        self.window.makeKeyAndOrderFront_(None)
+        self.layout(scroll=True)
+        NSApp.activateIgnoringOtherApps_(True)
 
-    def _pick_font(self, size: int, weight: str = "normal") -> tuple:
-        # Listing font families asks Tk to flush, which blanks the Mac window.
-        if sys.platform == "darwin":
-            family = "Helvetica"
-            return (family, size, weight) if weight != "normal" else (family, size)
-        families = set(tkfont.families())
-        for name in (
-            "Arial Hebrew",
-            "Noto Sans Hebrew",
-            "Noto Serif Hebrew",
-            "DejaVu Sans",
-            "Arial",
-            "Helvetica",
-        ):
-            if name in families:
-                return (name, size, weight) if weight != "normal" else (name, size)
-        return ("TkDefaultFont", size)
+    def windowDidResize_(self, _notification) -> None:
+        if getattr(self, "_ready", False):
+            self.layout(scroll=False)
 
-    def _fit_geometry(self) -> None:
-        screen_w = self.root.winfo_screenwidth()
-        screen_h = self.root.winfo_screenheight()
-        if screen_w < 400 or screen_h < 400:
-            screen_w, screen_h = 1280, 800
-        width = min(1000, max(760, screen_w - 60))
-        height = min(920, max(700, screen_h - 100))
-        if width > screen_w - 20:
-            width = max(320, screen_w - 20)
-        if height > screen_h - 80:
-            height = max(320, screen_h - 80)
-        x = max(20, (screen_w - width) // 2)
-        self.root.geometry(f"{int(width)}x{int(height)}+{int(x)}+40")
-
-    def _label(self, parent: tk.Misc, text: str, *, bold: bool = False, muted: bool = False) -> tk.Label:
-        return tk.Label(
-            parent,
-            text=_shape(text),
-            bg=_widget_bg(parent),
-            fg=MUTED if muted else TEXT,
-            font=self.font_bold if bold else self.font,
-            anchor="w",
-            justify="left",
-        )
-
-    def _panel(self, parent: tk.Misc) -> tk.Frame:
-        return tk.Frame(
-            parent,
-            bg=PANEL,
-            highlightbackground=EDGE,
-            highlightthickness=1,
-            bd=0,
-            padx=10,
-            pady=6,
-        )
-
-    def _entry(self, parent: tk.Misc, variable: tk.Variable, font=None) -> tk.Entry:
-        return tk.Entry(
-            parent,
-            textvariable=variable,
-            bg=FIELD,
-            fg=TEXT,
-            insertbackground=TEXT,
-            disabledbackground=FIELD,
-            disabledforeground=MUTED,
-            font=font or self.font,
-            relief="flat",
-            highlightbackground=EDGE,
-            highlightcolor=ACCENT,
-            highlightthickness=1,
-        )
-
-    def _button(self, parent: tk.Misc, text: str, command, *, accent: bool = False) -> GlassButton:
-        return GlassButton(parent, _shape(text), command, self.font, accent=accent)
-
-    def _readout(self, parent: tk.Misc, height: int) -> tk.Text:
-        widget = tk.Text(
-            parent,
-            wrap="word",
-            font=self.font,
-            height=height,
-            bg=FIELD,
-            fg=TEXT,
-            insertbackground=TEXT,
-            relief="flat",
-            highlightbackground=EDGE,
-            highlightthickness=1,
-            padx=6,
-            pady=4,
-        )
-        return widget
-
-    def _fill_readout(self, widget: tk.Text, text: str) -> None:
-        widget.configure(state="normal")
-        widget.delete("1.0", "end")
-        widget.insert("1.0", text)
-        widget.configure(state="disabled")
+    def windowWillClose_(self, _notification) -> None:
+        timer = getattr(self, "timer", None)
+        if timer is not None:
+            timer.invalidate()
 
     def _build(self) -> None:
-        pad = tk.Frame(self.root, bg=BG, padx=14, pady=8)
-        pad.pack(side="top", fill="both", expand=True)
-
-        self._label(pad, "התאמת משרות", bold=True).pack(anchor="w")
-        self._label(
-            pad,
-            "משווים דרישות ממשרות ציבוריות לקורות החיים, אצלכם במחשב.",
-            muted=True,
-        ).pack(anchor="w", pady=(0, 6))
-
-        url_card = self._panel(pad)
-        url_card.pack(fill="x", pady=(0, 6))
-        self._label(url_card, "לוח משרות").pack(anchor="w")
-        self._label(url_card, "הדבק כאן כתובת http או https של לוח המשרות.", muted=True).pack(
-            anchor="w", pady=(0, 4)
-        )
-        self.url_var = tk.StringVar()
-        self.url_entry = self._entry(url_card, self.url_var, self.font_url)
-        self.url_entry.pack(fill="x", ipady=4)
-        self.url_entry.bind("<Return>", lambda _event: self.run_clicked())
-
-        cv_card = self._panel(pad)
-        cv_card.pack(fill="x", pady=(0, 6))
-        self._label(cv_card, "קורות חיים").pack(anchor="w")
-        cv_row = tk.Frame(cv_card, bg=PANEL)
-        cv_row.pack(fill="x", pady=(4, 6))
-        self._button(cv_row, "עיון…", self._pick_cv).pack(side="right")
-        self.cv_var = tk.StringVar()
-        self.cv_entry = self._entry(cv_row, self.cv_var)
-        self.cv_entry.pack(side="left", fill="x", expand=True, padx=(0, 8), ipady=3)
-        self.cv_entry.bind("<FocusOut>", lambda _event: self._show_cv(self.cv_var.get()))
-        self.cv_entry.bind("<Return>", lambda _event: self._show_cv(self.cv_var.get()))
-        self._label(cv_card, "תצוגה מקדימה", muted=True).pack(anchor="w")
-        self.cv_preview = self._readout(cv_card, 3)
-        self.cv_preview.pack(fill="x", pady=(2, 0))
-        self._show_cv("")
-
-        options = tk.Frame(pad, bg=BG)
-        options.pack(fill="x", pady=(0, 6))
-        self._label(options, "סף התאמה %").pack(side="left")
-        self.threshold_var = tk.IntVar(value=50)
-        tk.Spinbox(
-            options,
-            from_=0,
-            to=100,
-            textvariable=self.threshold_var,
-            width=5,
-            font=self.font,
-            bg=FIELD,
-            fg=TEXT,
-            buttonbackground=PANEL,
-            insertbackground=TEXT,
-            highlightbackground=EDGE,
-            highlightthickness=1,
-            relief="flat",
-        ).pack(side="left", padx=(8, 16))
-        self._label(options, "תיקיית דוח").pack(side="left")
-        self.out_var = tk.StringVar(value=str(self._default_out()))
-        self._entry(options, self.out_var).pack(side="left", fill="x", expand=True, padx=8, ipady=3)
-        self._button(options, "בחירה…", self._pick_out).pack(side="right")
-
-        actions = tk.Frame(pad, bg=BG)
-        actions.pack(fill="x", pady=(0, 6))
-        self.run_button = self._button(actions, "הרץ התאמה", self.run_clicked, accent=True)
-        self.run_button.pack(side="right")
-        self._button(actions, "פתח דוח", self._open_html).pack(side="right", padx=8)
-        self._button(actions, "פתח משרה", self._open_job).pack(side="right", padx=(0, 8))
-        self._button(actions, "נקה", self._clear_run).pack(side="right", padx=(0, 8))
-
-        progress_card = self._panel(pad)
-        progress_card.pack(fill="x", pady=(0, 6))
-        meta = tk.Frame(progress_card, bg=PANEL)
-        meta.pack(fill="x")
-        self.elapsed_var = tk.StringVar(value="0:00")
-        self.jobs_var = tk.StringVar(value=_shape("נמצאו 0"))
-        tk.Label(meta, textvariable=self.elapsed_var, bg=PANEL, fg=TEXT, font=self.font).pack(side="right")
-        tk.Label(meta, textvariable=self.jobs_var, bg=PANEL, fg=TEXT, font=self.font).pack(side="right", padx=(0, 16))
-        self.status_var = tk.StringVar(value=_shape("מוכן"))
-        tk.Label(
-            meta,
-            textvariable=self.status_var,
-            bg=PANEL,
-            fg=MUTED,
-            font=self.font,
-            anchor="w",
-        ).pack(side="left", fill="x", expand=True)
-        self.progress = tk.Canvas(
-            progress_card,
-            height=10,
-            bg=FIELD,
-            highlightthickness=0,
-            bd=0,
-        )
-        self.progress.pack(fill="x", pady=(8, 0))
-        self.progress.bind("<Configure>", self._draw_bar)
-        self._draw_bar()
-
-        live_card = self._panel(pad)
-        live_card.pack(fill="x", pady=(0, 6))
-        self._label(live_card, "העמוד שנשלף עכשיו", muted=True).pack(anchor="w")
-        self.live_url = tk.StringVar(value="")
-        tk.Label(
-            live_card,
-            textvariable=self.live_url,
-            bg=PANEL,
-            fg=ACCENT_HOT,
-            font=self.font,
-            anchor="w",
-            justify="left",
-            wraplength=760,
-        ).pack(fill="x", pady=(2, 4))
-        self.live_snippet = self._readout(live_card, 2)
-        self.live_snippet.pack(fill="x")
-        self._set_snippet("מחכה לשליפה.")
-
-        split = tk.Frame(pad, bg=BG)
-        split.pack(fill="both", expand=True)
-        left = tk.Frame(split, bg=BG)
-        left.pack(side="left", fill="both", expand=True, padx=(0, 8))
-        right = tk.Frame(split, bg=BG)
-        right.pack(side="left", fill="both", expand=True)
-
-        self._label(left, "תוצאות").pack(anchor="w")
-        list_row = tk.Frame(left, bg=BG)
-        list_row.pack(fill="both", expand=True)
-        scroll = tk.Scrollbar(
-            list_row,
-            bg=PANEL,
-            troughcolor=BG,
-            activebackground=ACCENT,
-            highlightthickness=0,
-            bd=0,
-        )
-        scroll.pack(side="right", fill="y")
-        self.results = tk.Listbox(
-            list_row,
-            font=self.font,
-            height=6,
-            bg=FIELD,
-            fg=TEXT,
-            selectbackground=ACCENT,
-            selectforeground="#ffffff",
-            activestyle="dotbox",
-            exportselection=False,
-            relief="flat",
-            highlightbackground=EDGE,
-            highlightthickness=1,
-            yscrollcommand=scroll.set,
-        )
-        self.results.pack(side="left", fill="both", expand=True)
-        scroll.configure(command=self.results.yview)
-        self.results.bind("<<ListboxSelect>>", self._on_select)
-
-        self._label(right, "פרטי המשרה").pack(anchor="w")
-        text_row = tk.Frame(right, bg=BG)
-        text_row.pack(fill="both", expand=True)
-        detail_scroll = tk.Scrollbar(
-            text_row,
-            bg=PANEL,
-            troughcolor=BG,
-            activebackground=ACCENT,
-            highlightthickness=0,
-            bd=0,
-        )
-        detail_scroll.pack(side="right", fill="y")
-        self.detail = self._readout(text_row, 6)
-        self.detail.configure(state="normal", yscrollcommand=detail_scroll.set)
-        self.detail.pack(side="left", fill="both", expand=True)
-        detail_scroll.configure(command=self.detail.yview)
-
-        self.report_var = tk.StringVar(value="")
-        tk.Label(
-            pad,
-            textvariable=self.report_var,
-            bg=BG,
-            fg=MUTED,
-            font=self.font,
-            wraplength=780,
-            justify="left",
-            anchor="w",
-        ).pack(fill="x", pady=(6, 0))
-
-    def _draw_bar(self, event=None) -> None:
-        width = event.width if event is not None else self.progress.winfo_width()
-        height = event.height if event is not None else self.progress.winfo_height()
-        if width < 4:
-            width = 480
-        if height < 4:
-            height = 10
-        self.progress.delete("bar")
-        self.progress.create_rectangle(0, 0, width, height, fill="#172033", outline="", tags="bar")
-        filled = max(0, int(width * self._fraction))
-        if filled > 0:
-            self.progress.create_rectangle(0, 0, filled, height, fill=ACCENT, outline="", tags="bar")
-
-    def _set_snippet(self, text: str) -> None:
-        cleaned = re.sub(r"\s+", " ", text or "").strip()
-        self._fill_readout(self.live_snippet, _shape(cleaned or "מחכה לשליפה."))
-
-    def _show_cv(self, path: str) -> None:
-        path = (path or "").strip()
-        file = Path(path) if path else None
-        if file is None or not file.is_file():
-            self._fill_readout(self.cv_preview, _shape("לא נבחר קובץ."))
-            return
-        kind = {".pdf": "PDF", ".docx": "DOCX", ".txt": "TXT"}.get(file.suffix.lower(), "FILE")
-        if file.suffix.lower() not in {".pdf", ".docx", ".txt"}:
-            self._fill_readout(
-                self.cv_preview,
-                _shape_block(f"{file.name}\n{kind}\nבחרו קובץ PDF, DOCX או TXT."),
-            )
-            return
-        try:
-            profile = parse_cv(file)
-        except CvReadError as exc:
-            body = f"{file.name}\n{kind}\n{exc}"
+        screen = NSScreen.mainScreen()
+        if screen is None:
+            visible_w, visible_h, base_x, base_y = 1440.0, 900.0, 0.0, 0.0
         else:
-            excerpt = re.sub(r"\s+", " ", profile.text).strip()[:420]
-            body = f"{file.name}  ·  {kind}\n{excerpt}"
-        self._fill_readout(self.cv_preview, _shape_block(body))
+            frame = screen.visibleFrame()
+            visible_w, visible_h = frame.size.width, frame.size.height
+            base_x, base_y = frame.origin.x, frame.origin.y
+        width = min(1040, max(780, visible_w - 80))
+        height = min(900, max(680, visible_h - 90))
+        origin_x = base_x + max(20, (visible_w - width) / 2)
+        origin_y = base_y + max(20, (visible_h - height) / 2)
+        style = (
+            NSWindowStyleMaskTitled
+            | NSWindowStyleMaskClosable
+            | NSWindowStyleMaskMiniaturizable
+            | NSWindowStyleMaskResizable
+        )
+        self.window = NSWindow.alloc().initWithContentRect_styleMask_backing_defer_(
+            NSMakeRect(origin_x, origin_y, width, height),
+            style,
+            NSBackingStoreBuffered,
+            False,
+        )
+        self.window.setTitle_("Job Matcher")
+        self.window.setMinSize_(NSMakeSize(760, 620))
+        self.window.setBackgroundColor_(NAVY)
+        self.window.setDelegate_(self)
+        content = self.window.contentView()
+        appearance = NSAppearance.appearanceNamed_(NSAppearanceNameDarkAqua)
+        self.appearance = appearance
+        if appearance is not None:
+            self.window.setAppearance_(appearance)
+            content.setAppearance_(appearance)
+        self.effect = NSVisualEffectView.alloc().initWithFrame_(content.bounds())
+        self.effect.setMaterial_(NSVisualEffectMaterialHUDWindow)
+        self.effect.setBlendingMode_(NSVisualEffectBlendingModeWithinWindow)
+        self.effect.setState_(NSVisualEffectStateActive)
+        self.effect.setAutoresizingMask_(NSViewWidthSizable | NSViewHeightSizable)
+        content.addSubview_(self.effect)
 
-    def _default_out(self) -> Path:
-        documents = Path.home() / "Documents"
-        base = documents if documents.is_dir() else Path.home()
-        return base / "job-matcher-reports"
+        self.scroll = self._scroll(content.bounds())
+        self.scroll.setAutoresizingMask_(NSViewWidthSizable | NSViewHeightSizable)
+        content.addSubview_(self.scroll)
+        self.doc = NSView.alloc().initWithFrame_(content.bounds())
+        self.scroll.setDocumentView_(self.doc)
 
-    def _load_state(self) -> None:
+        self._card("url_card")
+        self._card("cv_card")
+        self._card("progress_card")
+        self._card("live_card")
+
+        self._label("title", "התאמת משרות", 22, bold=True, color=TEXT)
+        self._label("subtitle", "משווים דרישות ממשרות ציבוריות לקורות החיים, אצלכם במחשב.", 13, color=MUTED)
+        self._label("url_label", "לוח משרות", 14, bold=True, color=TEXT)
+        self._label("url_hint", "הדבק כאן כתובת http או https של לוח המשרות.", 12, color=MUTED)
+        self.url_field = self._field(16)
+        self.url_field.setPlaceholderString_("https://")
+        self.url_field.setDelegate_(self)
+        self.url_field.setTarget_(self)
+        self.url_field.setAction_("runClicked:")
+        self.views["url_field"] = self.url_field
+        self.doc.addSubview_(self.url_field)
+
+        self._label("cv_label", "קורות חיים", 14, bold=True, color=TEXT)
+        self.cv_field = self._field(13)
+        self.cv_field.setDelegate_(self)
+        self.views["cv_field"] = self.cv_field
+        self.doc.addSubview_(self.cv_field)
+        self._button("cv_button", "עיון…", "pickCv:", GHOST, TEXT)
+        self._label("preview_label", "תצוגה מקדימה", 12, color=MUTED)
+        self.preview_scroll, self.preview = self._reader()
+        self.views["preview"] = self.preview_scroll
+        self.doc.addSubview_(self.preview_scroll)
+
+        self._label("threshold_label", "סף התאמה %", 13, color=TEXT)
+        self.threshold_field = self._field(13)
+        self.threshold_field.setStringValue_("50")
+        self.threshold_field.setDelegate_(self)
+        self.views["threshold_field"] = self.threshold_field
+        self.doc.addSubview_(self.threshold_field)
+        self._label("out_label", "תיקיית דוח", 13, color=TEXT)
+        self.out_field = self._field(13)
+        self.out_field.setStringValue_(str(default_out_dir()))
+        self.out_field.setDelegate_(self)
+        self.views["out_field"] = self.out_field
+        self.doc.addSubview_(self.out_field)
+        self._button("out_button", "בחירה…", "pickOut:", GHOST, TEXT)
+
+        self._button("clear", "נקה", "clearClicked:", GHOST, TEXT)
+        self._button("open_job", "פתח משרה", "openJob:", GHOST, TEXT)
+        self._button("open_report", "פתח דוח", "openReport:", GHOST, TEXT)
+        self._button("run", "הרץ התאמה", "runClicked:", ACCENT, WHITE, accent=True)
+
+        self._label("status", "מוכן", 12, color=MUTED)
+        self._label("jobs", "נמצאו 0", 13, color=TEXT)
+        self._label("elapsed", "0:00", 13, color=TEXT)
+        self.bar = NSProgressIndicator.alloc().initWithFrame_(NSMakeRect(0, 0, 10, 12))
+        self.bar.setStyle_(NSProgressIndicatorBarStyle)
+        self.bar.setIndeterminate_(False)
+        self.bar.setMinValue_(0.0)
+        self.bar.setMaxValue_(1.0)
+        self.bar.setDoubleValue_(0.0)
+        self.views["bar"] = self.bar
+        self.doc.addSubview_(self.bar)
+
+        self._label("live_label", "העמוד שנשלף עכשיו", 12, color=MUTED)
+        self.live_url = self._label_view("live_url", "", 13, ACCENT)
+        self.views["live_url"] = self.live_url
+        self.live_url.setSelectable_(True)
+        self.live_scroll, self.live_snippet = self._reader()
+        self.views["live_snippet"] = self.live_scroll
+        self.doc.addSubview_(self.live_scroll)
+
+        self._label("results_label", "תוצאות", 14, bold=True, color=TEXT)
+        self._label("detail_label", "פרטי המשרה", 14, bold=True, color=TEXT)
+        self.results_scroll, self.table = self._table()
+        self.views["results"] = self.results_scroll
+        self.doc.addSubview_(self.results_scroll)
+        self.detail_scroll, self.detail = self._reader()
+        self.views["detail"] = self.detail_scroll
+        self.doc.addSubview_(self.detail_scroll)
+        self.report_label = self._label_view("report", "", 12, MUTED)
+        self.views["report"] = self.report_label
+        self.report_label.setSelectable_(True)
+
+        self._set_text(self.preview, "לא נבחר קובץ.")
+        self._set_text(self.live_snippet, "מחכה לשליפה.")
+        self._load()
+        self.timer = NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
+            0.2, self, "tick:", None, True
+        )
+
+    def _scroll(self, frame):
+        scroll = NSScrollView.alloc().initWithFrame_(frame)
+        scroll.setHasVerticalScroller_(True)
+        scroll.setAutohidesScrollers_(True)
+        scroll.setDrawsBackground_(False)
+        scroll.setBorderType_(0)
+        scroll.setScrollerKnobStyle_(NSScrollerKnobStyleLight)
+        clip = scroll.contentView()
+        clip.setDrawsBackground_(False)
         try:
-            data = json.loads(STATE_PATH.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            return
-        if not isinstance(data, dict):
-            return
+            clip.setBackgroundColor_(NAVY)
+        except AttributeError:
+            pass
+        self._apply_appearance(scroll)
+        return scroll
+
+    def _apply_appearance(self, view) -> None:
+        appearance = getattr(self, "appearance", None)
+        if appearance is not None and view is not None:
+            try:
+                view.setAppearance_(appearance)
+            except AttributeError:
+                pass
+
+    def _card(self, name: str) -> None:
+        box = NSBox.alloc().initWithFrame_(NSMakeRect(0, 0, 10, 10))
+        box.setBoxType_(NSBoxCustom)
+        box.setTitlePosition_(NSNoTitle)
+        box.setBorderType_(NSLineBorder)
+        box.setBorderWidth_(1)
+        box.setFillColor_(CARD)
+        box.setBorderColor_(EDGE)
+        box.setContentViewMargins_(NSMakeSize(0, 0))
+        try:
+            box.setCornerRadius_(14)
+        except AttributeError:
+            pass
+        self.views[name] = box
+        self.doc.addSubview_(box)
+
+    def _label(self, name: str, text: str, size: float, bold: bool = False, color: NSColor = TEXT) -> None:
+        self.views[name] = self._label_view(name, text, size, color, bold=bold)
+
+    def _label_view(self, name: str, text: str, size: float, color: NSColor, bold: bool = False):
+        try:
+            field = NSTextField.labelWithString_(text)
+        except AttributeError:
+            field = NSTextField.alloc().initWithFrame_(NSMakeRect(0, 0, 10, 10))
+            field.setStringValue_(text)
+            field.setBezeled_(False)
+            field.setDrawsBackground_(False)
+            field.setEditable_(False)
+            field.setSelectable_(False)
+        field.setStringValue_(text)
+        field.setBezeled_(False)
+        field.setDrawsBackground_(False)
+        field.setEditable_(False)
+        field.setSelectable_(False)
+        field.setTextColor_(color)
+        field.setFont_(NSFont.boldSystemFontOfSize_(size) if bold else NSFont.systemFontOfSize_(size))
+        self._apply_appearance(field)
+        try:
+            field.cell().setTextColor_(color)
+        except AttributeError:
+            pass
+        self.doc.addSubview_(field)
+        return field
+
+    def _field(self, size: float):
+        field = NSTextField.alloc().initWithFrame_(NSMakeRect(0, 0, 10, 10))
+        field.setBezelStyle_(NSTextFieldRoundedBezel)
+        field.setBezeled_(True)
+        field.setDrawsBackground_(True)
+        field.setBackgroundColor_(FIELD)
+        field.setTextColor_(TEXT)
+        field.setFont_(NSFont.systemFontOfSize_(size))
+        field.setFocusRingType_(NSFocusRingTypeNone)
+        self._apply_appearance(field)
+        try:
+            field.cell().setScrollable_(True)
+            field.cell().setTextColor_(TEXT)
+        except AttributeError:
+            pass
+        return field
+
+    def _button(self, name: str, text: str, action: str, fill: NSColor, title_color: NSColor, accent: bool = False) -> None:
+        box = NSBox.alloc().initWithFrame_(NSMakeRect(0, 0, 10, 10))
+        box.setBoxType_(NSBoxCustom)
+        box.setTitlePosition_(NSNoTitle)
+        box.setBorderType_(NSLineBorder)
+        box.setBorderWidth_(1)
+        box.setFillColor_(fill)
+        box.setBorderColor_(ACCENT if accent else EDGE)
+        box.setContentViewMargins_(NSMakeSize(0, 0))
+        try:
+            box.setCornerRadius_(8)
+        except AttributeError:
+            pass
+        button = NSButton.alloc().initWithFrame_(NSMakeRect(0, 0, 10, 10))
+        button.setBordered_(False)
+        button.setBezelStyle_(NSBezelStyleRounded)
+        button.setFocusRingType_(NSFocusRingTypeNone)
+        button.setAttributedTitle_(_title(text, title_color))
+        button.setTarget_(self)
+        button.setAction_(action)
+        self.buttons[name] = {
+            "button": button,
+            "box": box,
+            "text": text,
+            "fill": fill,
+            "dim": ACCENT_DIM if accent else GHOST_DIM,
+            "title": title_color,
+        }
+        self.views[name] = button
+        self.doc.addSubview_(box)
+        self.doc.addSubview_(button)
+
+    def _reader(self):
+        scroll = self._scroll(NSMakeRect(0, 0, 10, 10))
+        text = NSTextView.alloc().initWithFrame_(NSMakeRect(0, 0, 10, 10))
+        text.setEditable_(False)
+        text.setSelectable_(True)
+        text.setRichText_(False)
+        text.setDrawsBackground_(True)
+        text.setBackgroundColor_(FIELD)
+        text.setTextColor_(TEXT)
+        text.setFont_(NSFont.systemFontOfSize_(13))
+        self._apply_appearance(text)
+        self._apply_appearance(scroll)
+        text.setVerticallyResizable_(True)
+        text.setHorizontallyResizable_(False)
+        text.setAutoresizingMask_(NSViewWidthSizable)
+        container = text.textContainer()
+        if container is not None:
+            container.setWidthTracksTextView_(True)
+        scroll.setDocumentView_(text)
+        return scroll, text
+
+    def _table(self):
+        scroll = self._scroll(NSMakeRect(0, 0, 10, 10))
+        table = NSTableView.alloc().initWithFrame_(NSMakeRect(0, 0, 10, 10))
+        column = NSTableColumn.alloc().initWithIdentifier_("job")
+        column.setEditable_(False)
+        try:
+            column.dataCell().setTextColor_(TEXT)
+            column.dataCell().setFont_(NSFont.systemFontOfSize_(13))
+        except AttributeError:
+            pass
+        table.addTableColumn_(column)
+        table.setHeaderView_(None)
+        table.setBackgroundColor_(FIELD)
+        table.setRowHeight_(28)
+        table.setUsesAlternatingRowBackgroundColors_(False)
+        table.setColumnAutoresizingStyle_(NSTableViewLastColumnOnlyAutoresizingStyle)
+        table.setDataSource_(self)
+        table.setDelegate_(self)
+        scroll.setDocumentView_(table)
+        return scroll, table
+
+    def layout(self, scroll: bool = False) -> None:
+        bounds = self.window.contentView().bounds()
+        self.effect.setFrame_(bounds)
+        self.scroll.setFrame_(bounds)
+        width = bounds.size.width
+        frames, height = layout_frames(width)
+        self.doc.setFrame_(NSMakeRect(0, 0, width, height))
+        for name, rect in frames.items():
+            view = self.views.get(name)
+            if view is not None:
+                view.setFrame_(NSMakeRect(*rect))
+            meta = self.buttons.get(name)
+            if meta is not None:
+                meta["box"].setFrame_(NSMakeRect(*rect))
+        self._fit_reader(self.preview_scroll, self.preview)
+        self._fit_reader(self.live_scroll, self.live_snippet)
+        self._fit_reader(self.detail_scroll, self.detail)
+        if self.table.tableColumns():
+            column = self.table.tableColumns()[0]
+            column.setWidth_(max(80, frames["results"][2] - 8))
+        if scroll or not self._scrolled:
+            self._scroll_to_top(height)
+            self._scrolled = True
+
+    def _fit_reader(self, scroll, text) -> None:
+        size = scroll.contentSize()
+        text.setFrame_(NSMakeRect(0, 0, max(40, size.width), max(20, size.height)))
+
+    def _scroll_to_top(self, doc_height: float) -> None:
+        clip = self.scroll.contentView()
+        visible = clip.bounds().size.height
+        clip.scrollToPoint_(NSMakePoint(0, max(0, doc_height - visible)))
+        self.scroll.reflectScrolledClipView_(clip)
+
+    def _set_text(self, view, value: str) -> None:
+        view.setString_(value or "")
+        view.setFont_(NSFont.systemFontOfSize_(13))
+        view.setTextColor_(TEXT)
+        view.setBackgroundColor_(FIELD)
+
+    def _set_enabled(self, name: str, enabled: bool) -> None:
+        meta = self.buttons[name]
+        meta["button"].setEnabled_(enabled)
+        meta["box"].setFillColor_(meta["fill"] if enabled else meta["dim"])
+        color = meta["title"] if enabled else MUTED
+        meta["button"].setAttributedTitle_(_title(meta["text"], color))
+
+    def _load(self) -> None:
+        data = load_state()
         url = data.get("url")
         if isinstance(url, str) and url.strip():
-            self.url_var.set(url.strip())
+            self.url_field.setStringValue_(url.strip())
         out = data.get("out")
         if isinstance(out, str) and out.strip():
-            self.out_var.set(out.strip())
+            self.out_field.setStringValue_(out.strip())
         cv = data.get("cv")
         if isinstance(cv, str) and cv.strip():
-            self.cv_var.set(cv.strip())
-            self._show_cv(cv.strip())
+            self.cv_field.setStringValue_(cv.strip())
+            self._set_text(self.preview, cv_preview_text(cv.strip()))
         try:
             threshold = int(data.get("threshold"))
         except (TypeError, ValueError):
             threshold = None
         if threshold is not None and 0 <= threshold <= 100:
-            try:
-                self.threshold_var.set(threshold)
-            except tk.TclError:
-                pass
+            self.threshold_field.setStringValue_(str(threshold))
 
     def _remember(self) -> None:
-        payload = {
-            "url": self.url_var.get().strip(),
-            "cv": self.cv_var.get().strip(),
-            "out": self.out_var.get().strip(),
-            "threshold": 50,
-        }
         try:
-            payload["threshold"] = int(self.threshold_var.get())
-        except (tk.TclError, TypeError, ValueError):
-            pass
-        try:
-            STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
-            STATE_PATH.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-        except OSError:
-            pass
-
-    def _pick_cv(self) -> None:
-        chosen = filedialog.askopenfilename(
-            title=_shape("בחירת קורות חיים"),
-            filetypes=[
-                ("CV", "*.pdf *.docx *.txt"),
-                ("PDF", "*.pdf"),
-                ("Word", "*.docx"),
-                ("Text", "*.txt"),
-            ],
+            threshold = int(float(self.threshold_field.stringValue()))
+        except (TypeError, ValueError):
+            threshold = 50
+        save_state(
+            {
+                "url": str(self.url_field.stringValue() or "").strip(),
+                "cv": str(self.cv_field.stringValue() or "").strip(),
+                "out": str(self.out_field.stringValue() or "").strip(),
+                "threshold": threshold,
+            }
         )
-        if chosen:
-            self.cv_var.set(chosen)
-            self._show_cv(chosen)
-            self._remember()
 
-    def _pick_out(self) -> None:
-        chosen = filedialog.askdirectory(title=_shape("תיקיית שמירה"))
-        if chosen:
-            self.out_var.set(chosen)
-            self._remember()
+    def _show_cv(self, path: str) -> None:
+        self._set_text(self.preview, cv_preview_text(path))
 
-    def _clear_run(self) -> None:
-        self._running = False
+    def controlTextDidEndEditing_(self, notification) -> None:
+        if notification.object() == self.cv_field:
+            self._show_cv(str(self.cv_field.stringValue() or ""))
+        self._remember()
+
+    def pickCv_(self, _sender) -> None:
+        panel = NSOpenPanel.openPanel()
+        panel.setCanChooseFiles_(True)
+        panel.setCanChooseDirectories_(False)
+        panel.setAllowsMultipleSelection_(False)
+        panel.setAllowedFileTypes_(["pdf", "docx", "txt"])
+        panel.setTitle_("בחירת קורות חיים")
+        if panel.runModal() != NSModalResponseOK or not panel.URLs():
+            return
+        path = str(panel.URLs()[0].path())
+        self.cv_field.setStringValue_(path)
+        self._show_cv(path)
+        self._remember()
+
+    def pickOut_(self, _sender) -> None:
+        panel = NSOpenPanel.openPanel()
+        panel.setCanChooseFiles_(False)
+        panel.setCanChooseDirectories_(True)
+        panel.setCanCreateDirectories_(True)
+        panel.setAllowsMultipleSelection_(False)
+        panel.setTitle_("תיקיית שמירה")
+        if panel.runModal() != NSModalResponseOK or not panel.URLs():
+            return
+        self.out_field.setStringValue_(str(panel.URLs()[0].path()))
+        self._remember()
+
+    def clearClicked_(self, _sender) -> None:
+        self.running = False
+        self.lines = []
         self.visible = []
         self.markdown_path = ""
         self.html_path = ""
-        self.results.delete(0, "end")
-        self.detail.configure(state="normal")
-        self.detail.delete("1.0", "end")
-        self.report_var.set("")
-        self.status_var.set(_shape("מוכן"))
-        self.jobs_var.set(_shape("נמצאו 0"))
-        self.elapsed_var.set("0:00")
-        self.live_url.set("")
-        self._set_snippet("מחכה לשליפה.")
-        self._fraction = 0.0
-        self._draw_bar()
+        self.table.reloadData()
+        self._set_text(self.detail, "")
+        self.report_label.setStringValue_("")
+        self.views["status"].setStringValue_("מוכן")
+        self.views["jobs"].setStringValue_("נמצאו 0")
+        self.views["elapsed"].setStringValue_("0:00")
+        self.live_url.setStringValue_("")
+        self._set_text(self.live_snippet, "מחכה לשליפה.")
+        self.bar.setDoubleValue_(0.0)
 
-    def run_clicked(self) -> None:
+    def runClicked_(self, _sender) -> None:
+        if self.running:
+            return
         try:
-            url = validate_http_url(self.url_var.get())
+            url = validate_http_url(str(self.url_field.stringValue() or ""))
         except ValueError as exc:
-            messagebox.showerror(_shape("כתובת"), _shape(str(exc)))
+            self._alert("כתובת", str(exc))
             return
-        cv_path = Path(self.cv_var.get().strip())
+        cv_path = Path(str(self.cv_field.stringValue() or "").strip())
         if cv_path.suffix.lower() not in {".pdf", ".docx", ".txt"} or not cv_path.is_file():
-            messagebox.showerror(
-                _shape("קורות חיים"),
-                _shape("בחרו קובץ PDF, DOCX או TXT קיים."),
-            )
+            self._alert("קורות חיים", "בחרו קובץ PDF, DOCX או TXT קיים.")
             return
         try:
-            threshold = float(self.threshold_var.get())
-        except (tk.TclError, ValueError):
-            messagebox.showerror(_shape("סף"), _shape("הסף צריך להיות מספר בין 0 ל-100."))
+            threshold = float(self.threshold_field.stringValue())
+        except (TypeError, ValueError):
+            self._alert("סף", "הסף צריך להיות מספר בין 0 ל-100.")
             return
-        out_dir = Path(self.out_var.get().strip() or self._default_out())
+        out_dir = Path(str(self.out_field.stringValue() or "").strip() or default_out_dir())
         self._show_cv(str(cv_path))
         self._remember()
-        self.run_button.configure(state="disabled")
-        self._running = True
-        self._started = time.monotonic()
-        self._fraction = 0.04
-        self._draw_bar()
-        self.jobs_var.set(_shape("נמצאו 0"))
-        self.elapsed_var.set("0:00")
-        self.status_var.set(_shape("מתחיל…"))
-        self.live_url.set(url)
-        self._set_snippet("מתחיל שליפה…")
-        self.detail.configure(state="normal")
-        self.detail.delete("1.0", "end")
+        self.running = True
+        self.started = time.monotonic()
+        self._set_enabled("run", False)
+        self.bar.setDoubleValue_(0.04)
+        self.views["jobs"].setStringValue_("נמצאו 0")
+        self.views["elapsed"].setStringValue_("0:00")
+        self.views["status"].setStringValue_("מתחיל…")
+        self.live_url.setStringValue_(url)
+        self._set_text(self.live_snippet, "מתחיל שליפה…")
+        self._set_text(self.detail, "")
 
         def worker() -> None:
             try:
@@ -644,134 +635,153 @@ class JobMatcherApp:
 
         threading.Thread(target=worker, daemon=True).start()
 
-    def present(self, result) -> None:
-        if self._running and self._started:
-            self.elapsed_var.set(self._clock())
-        self._running = False
-        self._fraction = 1.0
-        self._draw_bar()
-        self.jobs_var.set(_shape(f"נמצאו {len(result.jobs)}"))
-        self.visible = result.included_jobs()
-        self.markdown_path = result.markdown_path
-        self.html_path = result.html_path
-        self.results.delete(0, "end")
-        for scored in self.visible:
-            job = scored.job
-            company = job.company or "—"
-            location = job.location or ""
-            # Percent stays at the start. Shaping the whole line would move it.
-            self.results.insert(
-                "end",
-                f"{scored.match_percent}%   {_shape(job.title)}   {_shape(company)}   {_shape(location)}",
-            )
-        below = len(result.below_threshold())
-        unscored = len(result.unscored())
-        if result.errors and not self.visible:
-            status = "השליפה נעצרה. הפירוט בפרטי המשרה."
-        elif not self.visible:
-            status = f"אין משרות מעל {result.threshold}%. מתחת לסף: {below}. בלי ציון: {unscored}."
-        else:
-            status = (
-                f"{len(self.visible)} משרות מעל {result.threshold}%, "
-                f"לפי אחוז. מתחת לסף: {below}. בלי ציון: {unscored}."
-            )
-        self.status_var.set(_shape(status))
-        self.report_var.set(f"נשמר  {result.markdown_path}    {result.html_path}")
-        self.detail.configure(state="normal")
-        if self.visible:
-            self.results.selection_clear(0, "end")
-            self.results.selection_set(0)
-            self.results.activate(0)
-            self._show(0)
-        elif result.errors or result.notes:
-            self.detail.delete("1.0", "end")
-            self.detail.insert("1.0", _shape_block("\n".join(result.errors + result.notes)))
-        self.run_button.configure(state="normal")
-
-    def _show(self, index: int) -> None:
-        if index < 0 or index >= len(self.visible):
-            return
-        self.detail.configure(state="normal")
-        self.detail.delete("1.0", "end")
-        self.detail.insert("1.0", _shape_block(format_job_plain(self.visible[index])))
-        self.detail.see("1.0")
-
-    def _on_select(self, _event=None) -> None:
-        selected = self.results.curselection()
-        if not selected:
-            return
-        self._show(int(selected[0]))
-
-    def _apply_watch(self, event: dict) -> None:
-        url = str(event.get("url") or "")
-        if len(url) > 110:
-            url = url[:107] + "…"
-        if url:
-            self.live_url.set(url)
-        snippet = str(event.get("snippet") or "")
-        if snippet:
-            self._set_snippet(snippet)
-        jobs = event.get("jobs")
-        if jobs is not None:
-            self.jobs_var.set(_shape(f"נמצאו {int(jobs)}"))
-        fraction = event.get("fraction")
-        if fraction is not None:
-            self._fraction = max(0.0, min(1.0, float(fraction)))
-            self._draw_bar()
-
-    def _clock(self) -> str:
-        seconds = max(0, int(time.monotonic() - self._started))
-        return f"{seconds // 60}:{seconds % 60:02d}"
-
-    def _poll(self) -> None:
-        if self._running:
-            self.elapsed_var.set(self._clock())
+    def tick_(self, _timer) -> None:
+        if self.running:
+            seconds = max(0, int(time.monotonic() - self.started))
+            self.views["elapsed"].setStringValue_(f"{seconds // 60}:{seconds % 60:02d}")
         try:
             while True:
                 kind, payload = self.queue.get_nowait()
                 if kind == "progress":
-                    self.status_var.set(_shape(str(payload)))
+                    self.views["status"].setStringValue_(str(payload))
                 elif kind == "watch":
                     self._apply_watch(payload)
                 elif kind == "ok":
-                    self.present(payload)
+                    self._present(payload)
                 elif kind == "err":
-                    self._running = False
-                    self.run_button.configure(state="normal")
-                    self.status_var.set(_shape("הריצה נעצרה"))
-                    self._set_snippet(str(payload))
-                    messagebox.showerror(_shape("שגיאה"), _shape(str(payload)))
+                    self.running = False
+                    self._set_enabled("run", True)
+                    self.views["status"].setStringValue_("הריצה נעצרה")
+                    self._set_text(self.live_snippet, str(payload))
+                    self._alert("שגיאה", str(payload))
         except queue.Empty:
             pass
-        self.root.after(120, self._poll)
 
-    def _open_html(self) -> None:
+    def _apply_watch(self, event: dict) -> None:
+        view = watch_view(event if isinstance(event, dict) else {})
+        if view["url"]:
+            self.live_url.setStringValue_(view["url"])
+        if view["snippet"]:
+            self._set_text(self.live_snippet, view["snippet"])
+        if view["jobs"] is not None:
+            self.views["jobs"].setStringValue_(jobs_found_label(view["jobs"]))
+        if view["fraction"] is not None:
+            self.bar.setDoubleValue_(view["fraction"])
+
+    def _present(self, result) -> None:
+        if self.running and self.started:
+            seconds = max(0, int(time.monotonic() - self.started))
+            self.views["elapsed"].setStringValue_(f"{seconds // 60}:{seconds % 60:02d}")
+        self.running = False
+        self._set_enabled("run", True)
+        self.bar.setDoubleValue_(1.0)
+        self.views["jobs"].setStringValue_(jobs_found_label(len(result.jobs)))
+        self.visible = result.included_jobs()
+        self.lines = result_lines(result)
+        self.markdown_path = result.markdown_path or ""
+        self.html_path = result.html_path or ""
+        self.table.reloadData()
+        self.views["status"].setStringValue_(status_text(result))
+        self.report_label.setStringValue_(f"נשמר  {result.markdown_path}    {result.html_path}")
+        if self.visible:
+            try:
+                self.table.selectRowIndexes_byExtendingSelection_(NSIndexSet.indexSetWithIndex_(0), False)
+            except Exception:
+                pass
+            self._show_row(0)
+        else:
+            self._set_text(self.detail, detail_text(result, -1))
+
+    def _show_row(self, index: int) -> None:
+        if index < 0 or index >= len(self.visible):
+            return
+        self._set_text(self.detail, detail_text_for(self.visible[index]))
+
+    def numberOfRowsInTableView_(self, _table) -> int:
+        return len(self.lines)
+
+    def tableView_objectValueForTableColumn_row_(self, _table, _column, row: int) -> str:
+        if row < 0 or row >= len(self.lines):
+            return ""
+        return self.lines[row]
+
+    def tableViewSelectionDidChange_(self, _notification) -> None:
+        row = self.table.selectedRow()
+        if row < 0:
+            return
+        self._show_row(int(row))
+
+    def openReport_(self, _sender) -> None:
         if not self.html_path:
-            messagebox.showinfo(_shape("דוח"), _shape("עדיין אין דוח. הריצו התאמה קודם."))
+            self._alert("דוח", "עדיין אין דוח. הריצו התאמה קודם.")
             return
-        open_on_desktop(self.html_path)
+        _open_target(self.html_path)
 
-    def _open_job(self) -> None:
-        selected = self.results.curselection()
-        if not selected:
-            messagebox.showinfo(_shape("משרה"), _shape("בחרו משרה מהרשימה."))
+    def openJob_(self, _sender) -> None:
+        row = self.table.selectedRow()
+        if row < 0 or row >= len(self.visible):
+            self._alert("משרה", "בחרו משרה מהרשימה.")
             return
-        url = self.visible[int(selected[0])].job.url
-        open_on_desktop(url)
+        _open_target(self.visible[int(row)].job.url)
+
+    def _alert(self, title: str, message: str) -> None:
+        alert = NSAlert.alloc().init()
+        alert.setMessageText_(title)
+        alert.setInformativeText_(message)
+        alert.addButtonWithTitle_("אישור")
+        alert.runModal()
 
 
-def open_on_desktop(path: str) -> None:
-    if sys.platform == "darwin":
-        subprocess.run(["open", path], check=False)
-    elif sys.platform == "win32":
-        import os
+def detail_text_for(scored) -> str:
+    from job_matcher.report import format_job_plain
 
-        os.startfile(path)  # type: ignore[attr-defined]
-    else:
-        subprocess.run(["xdg-open", path], check=False)
+    return format_job_plain(scored)
+
+
+def _open_target(target: str) -> None:
+    workspace = NSWorkspace.sharedWorkspace()
+    if target.startswith("http://") or target.startswith("https://"):
+        url = NSURL.URLWithString_(target)
+        if url is not None:
+            workspace.openURL_(url)
+        return
+    workspace.openFile_(target)
+
+
+def _install_menu(app) -> None:
+    main = NSMenu.alloc().init()
+    app_item = NSMenuItem.alloc().init()
+    main.addItem_(app_item)
+    app_menu = NSMenu.alloc().init()
+    app_menu.addItem_(NSMenuItem.alloc().initWithTitle_action_keyEquivalent_("Quit Job Matcher", "terminate:", "q"))
+    app_item.setSubmenu_(app_menu)
+
+    edit_item = NSMenuItem.alloc().init()
+    main.addItem_(edit_item)
+    edit = NSMenu.alloc().initWithTitle_("Edit")
+    for title, action, key in (
+        ("Cut", "cut:", "x"),
+        ("Copy", "copy:", "c"),
+        ("Paste", "paste:", "v"),
+        ("Select All", "selectAll:", "a"),
+    ):
+        edit.addItem_(NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(title, action, key))
+    edit_item.setSubmenu_(edit)
+    app.setMainMenu_(main)
 
 
 def run_gui() -> None:
-    root = tk.Tk()
-    JobMatcherApp(root)
-    root.mainloop()
+    if sys.platform != "darwin":
+        raise SystemExit(
+            "חלון האפליקציה הוא חלון macOS ‏(AppKit). "
+            "במחשב הזה הריצו עם --url או --html ועם --cv."
+        )
+    app = NSApplication.sharedApplication()
+    _ensure_colors()
+    app.setActivationPolicy_(NSApplicationActivationPolicyRegular)
+    window = JobMatcherWindow.alloc().init()
+    _KEEP["window"] = window
+    app.setDelegate_(window)
+    _install_menu(app)
+    window.show()
+    AppHelper.runEventLoop()

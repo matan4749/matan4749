@@ -10,9 +10,9 @@ The default minimum match is 50%. Change it in the window or with `--threshold`.
 
 ## הרצה על מק / Run on a Mac
 
-צריך Python 3.11 ומעלה **עם Tk** (חלון). ההתקנה מ-[python.org/downloads/macos](https://www.python.org/downloads/macos/) כוללת את Tk.
+צריך את Python 3 שמגיע עם macOS (3.9 ומעלה). החלון הוא חלון מק אמיתי דרך AppKit, לא Tk.
 
-You need Python 3.11 or newer **with Tk**. The installer from [python.org/downloads/macos](https://www.python.org/downloads/macos/) includes it.
+You need the Python 3 that comes with macOS (3.9 or newer). The window is a native AppKit window, not Tk.
 
 1. פתחו את התיקייה `job-matcher`.
 2. לחצו פעמיים על `run-job-matcher.command`.
@@ -24,9 +24,9 @@ chmod +x run-job-matcher.command
 ./run-job-matcher.command
 ```
 
-ההפעלה הראשונה יוצרת `.venv` ומתקינה את החבילות מ-`requirements.txt`, ואז נפתח החלון. החלון כהה, עם לוחות ופס התקדמות שמצוירים ישירות (לא כפתורי Tk האפורים). שדה הכתובת גדול וברור, אחרי בחירת קורות חיים מופיעה תצוגה מקדימה, ובזמן חיפוש רואים את העמוד שנשלף, כמה משרות נמצאו וכמה זמן עבר. הכתובת האחרונה נשמרת אצלכם. בקרות ערכת הנושא של Tk לא בשימוש, כי ב-macOS הן נשארות ריקות.
+ההפעלה הראשונה יוצרת `.venv` ומתקינה את החבילות, כולל PyObjC. נפתח חלון מק כהה (AppKit): כרטיס לכתובת הלוח, תצוגה מקדימה של קורות החיים אחרי הבחירה, כפתורים כחולים וכהים, פס התקדמות עם מספר המשרות והזמן שעבר, והעמוד שנשלף עכשיו (כתובת וקטע קצר, בלי דפדפן בתוך החלון). הכתובת האחרונה נשמרת אצלכם. Tk לא בשימוש, כי ב-Mac mini הוא מצייר חלון לבן ריק.
 
-First launch creates `.venv`, installs dependencies, and opens the window. The window is a dark glass-style panel with custom-drawn buttons and a progress strip. The job-board URL field is the obvious paste target. After a CV is chosen you get a short preview of the extracted text. During a search the window shows the page being fetched, how many jobs have been found, and the elapsed time. The last URL is remembered locally. Themed Tk controls are not used, because macOS system Tk leaves them blank.
+First launch creates `.venv`, installs dependencies (including PyObjC), and opens a dark native macOS window. It has a job-board URL card, a CV preview after you pick a file, colored buttons, a progress strip with jobs found and elapsed time, and the page currently being fetched (URL and a short snippet, no browser inside the window). The last URL is remembered on your Mac. Tk is not used, because on this Mac mini it paints a blank white window.
 
 Python של macOS (LibreSSL) מדפיס אזהרה עם urllib3 2. הקובץ `requirements.txt` נועל את urllib3 לגרסה 1.26, בלי האזהרה.
 
@@ -41,14 +41,6 @@ source .venv/bin/activate
 python3 -m pip install -r requirements.txt
 python3 -m job_matcher
 ```
-
-אם חסר Tkinter:
-
-```bash
-brew install python-tk
-```
-
-ואז פתחו מחדש את אותו Python.
 
 ### בדיקה בלי חלון / Report without the window
 

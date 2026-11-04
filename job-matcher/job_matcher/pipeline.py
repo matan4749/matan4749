@@ -25,6 +25,7 @@ def run_match(
     html_file: Path | None = None,
     progress: Progress | None = None,
     fetcher: Fetcher | None = None,
+    watch: Callable[[dict], None] | None = None,
 ) -> RunResult:
     progress = progress or (lambda _message: None)
     if threshold < 0 or threshold > 100:
@@ -47,8 +48,19 @@ def run_match(
         start_url = validate_http_url(url or "")
         fetcher = HttpFetcher()
 
-    extraction: Extraction = extract_jobs(fetcher, start_url, progress)
+    extraction: Extraction = extract_jobs(fetcher, start_url, progress, watch=watch)
     progress("משווה דרישות לקורות החיים…")
+    if watch:
+        watch(
+            {
+                "url": start_url,
+                "snippet": "משווה דרישות לקורות החיים",
+                "pages": extraction.pages_fetched,
+                "jobs": len(extraction.jobs),
+                "phase": "score",
+                "fraction": 0.96,
+            }
+        )
     scored = []
     for job in extraction.jobs:
         item = score_job(profile, job)

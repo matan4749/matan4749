@@ -259,6 +259,54 @@ class PipelineTests(unittest.TestCase):
         text = (ROOT / "requirements.txt").read_text(encoding="utf-8")
         self.assertIn("urllib3>=1.26.18,<2", text)
 
+    def test_watch_reports_the_page_being_fetched(self) -> None:
+        events = []
+        with tempfile.TemporaryDirectory() as tmp:
+            run_match(
+                html_file=FIXTURES / "board.html",
+                cv_path=CV,
+                threshold=50,
+                out_dir=Path(tmp),
+                watch=events.append,
+            )
+        self.assertTrue(events)
+        self.assertTrue(any(event.get("url") for event in events))
+        self.assertGreaterEqual(max(int(event.get("jobs") or 0) for event in events), 1)
+        self.assertTrue(any(event.get("snippet") for event in events))
+
+    def test_cv_preview_and_drawn_buttons(self) -> None:
+        import tkinter as tk
+
+        from job_matcher.gui import BG, GlassButton, JobMatcherApp
+
+        root = tk.Tk()
+        root.withdraw()
+        try:
+            app = JobMatcherApp(root)
+            self.assertEqual(app.root.cget("bg"), BG)
+            self.assertNotEqual(app.url_entry.cget("bg"), "#ffffff")
+            self.assertIsInstance(app.run_button, GlassButton)
+            app.run_button.configure(state="disabled")
+            app.run_button.configure(state="normal")
+            app._show_cv(str(CV))
+            preview = app.cv_preview.get("1.0", "end")
+            self.assertIn("sample_cv.txt", preview)
+            self.assertIn("TXT", preview)
+            self.assertIn("React", preview)
+            app._apply_watch(
+                {
+                    "url": "https://example.com/jobs/1",
+                    "snippet": "Backend Engineer Python",
+                    "jobs": 2,
+                    "fraction": 0.4,
+                }
+            )
+            self.assertIn("example.com", app.live_url.get())
+            self.assertIn("Backend", app.live_snippet.get("1.0", "end"))
+            self.assertIn("2", app.jobs_var.get())
+        finally:
+            root.destroy()
+
     def test_gui_lists_matches_descending(self) -> None:
         import tkinter as tk
 

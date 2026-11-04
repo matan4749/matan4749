@@ -118,15 +118,55 @@ class Extraction:
 Progress = Callable[[str], None]
 
 
-def extract_jobs(fetcher: Fetcher, start_url: str, progress: Progress | None = None) -> Extraction:
+def _page_snippet(html: str) -> str:
+    if not html:
+        return ""
+    if "<" in html[:200] and ">" in html[:200]:
+        from job_matcher.fetch import visible_text
+
+        text = visible_text(html)
+    else:
+        text = html
+    return re.sub(r"\s+", " ", text).strip()[:220]
+
+
+def extract_jobs(
+    fetcher: Fetcher,
+    start_url: str,
+    progress: Progress | None = None,
+    *,
+    watch: Callable[[dict], None] | None = None,
+) -> Extraction:
     progress = progress or (lambda _message: None)
     notes: list[str] = []
     errors: list[str] = []
     pages_fetched = 0
+    jobs_found = 0
+
+    def ping(url: str, snippet: str, phase: str, fraction: float | None = None) -> None:
+        if watch is None:
+            return
+        watch(
+            {
+                "url": url,
+                "snippet": (snippet or "")[:240],
+                "pages": pages_fetched,
+                "jobs": jobs_found,
+                "phase": phase,
+                "fraction": fraction,
+            }
+        )
 
     progress("שולף את העמוד…")
+    ping(start_url, "שולף את העמוד…", "fetch", 0.08)
     first = interpret(fetcher.fetch(start_url))
     pages_fetched += 1
+    ping(
+        first.final_url or start_url,
+        first.error or first.blocked_reason or _page_snippet(first.text),
+        "page",
+        0.16,
+    )
     if first.error:
         return Extraction([], [first.error], notes, pages_fetched)
     if first.blocked_reason:
@@ -150,8 +190,15 @@ def extract_jobs(fetcher: Fetcher, start_url: str, progress: Progress | None = N
         if normalized in seen_pages:
             break
         progress("שולף עמוד רשימה נוסף…")
+        ping(next_url, "שולף עמוד רשימה נוסף…", "fetch", 0.2)
         page = interpret(fetcher.fetch(next_url))
         pages_fetched += 1
+        ping(
+            page.final_url or next_url,
+            page.error or page.blocked_reason or _page_snippet(page.text),
+            "page",
+            0.24,
+        )
         seen_pages.add(normalized)
         if page.error or page.blocked_reason or looks_like_js_shell(page.text):
             notes.append(page.error or page.blocked_reason or "עמוד ההמשך נראה כמעטפת JavaScript ולא נקרא.")
@@ -165,6 +212,9 @@ def extract_jobs(fetcher: Fetcher, start_url: str, progress: Progress | None = N
         embedded = _embedded_jobs(soup, pages[0].final_url)
         if _is_single_job(soup, embedded, links):
             job = parse_job_page(pages[0], None)
+            if job is not None:
+                jobs_found = 1
+                ping(job.url, job.title, "job", 0.9)
             if job is None:
                 return Extraction(
                     [],
@@ -199,13 +249,22 @@ def extract_jobs(fetcher: Fetcher, start_url: str, progress: Progress | None = N
         return Extraction([], errors, notes, pages_fetched)
 
     jobs = list(embedded_jobs)
+    jobs_found = len(jobs)
     limited = hints[:MAX_JOBS]
     if len(hints) > MAX_JOBS:
         notes.append(f"נמצאו {len(hints)} קישורים. נקראו {MAX_JOBS} הראשונים בלבד.")
     for index, hint in enumerate(limited, start=1):
         progress(f"קורא משרה {index}/{len(limited)}: {hint.title}")
+        fraction = 0.25 + 0.65 * (index / max(len(limited), 1))
+        ping(hint.url, hint.title, "fetch", fraction)
         page = interpret(fetcher.fetch(hint.url))
         pages_fetched += 1
+        ping(
+            page.final_url or hint.url,
+            page.error or page.blocked_reason or _page_snippet(page.text) or hint.title,
+            "page",
+            fraction,
+        )
         if page.error or page.blocked_reason:
             notes.append(f"{hint.title} ({hint.url}): {page.error or page.blocked_reason}")
             continue
@@ -217,6 +276,8 @@ def extract_jobs(fetcher: Fetcher, start_url: str, progress: Progress | None = N
             notes.append(f"לא חולצה משרה מהקישור {hint.url}")
             continue
         jobs.append(job)
+        jobs_found = len(jobs)
+        ping(job.url, f"{job.title} — {job.company}".strip(" —"), "job", fraction)
     return Extraction(jobs, errors, notes, pages_fetched)
 
 

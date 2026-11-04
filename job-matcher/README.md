@@ -24,9 +24,9 @@ chmod +x run-job-matcher.command
 ./run-job-matcher.command
 ```
 
-ההפעלה הראשונה יוצרת `.venv` ומתקינה את החבילות מ-`requirements.txt`, ואז נפתח החלון. החלון משתמש בבקרים רגילים של Tk (לא ערכת הנושא) עם רקע בהיר וטקסט כהה, כי ה-Tk של macOS לפעמים מצייר חלון לבן ריק. שדה הכתובת, קורות החיים, הסף וכפתור ההרצה נשארים למעלה.
+ההפעלה הראשונה יוצרת `.venv` ומתקינה את החבילות מ-`requirements.txt`, ואז נפתח החלון. החלון כהה, עם לוחות ופס התקדמות שמצוירים ישירות (לא כפתורי Tk האפורים). שדה הכתובת גדול וברור, אחרי בחירת קורות חיים מופיעה תצוגה מקדימה, ובזמן חיפוש רואים את העמוד שנשלף, כמה משרות נמצאו וכמה זמן עבר. הכתובת האחרונה נשמרת אצלכם. בקרות ערכת הנושא של Tk לא בשימוש, כי ב-macOS הן נשארות ריקות.
 
-First launch creates `.venv`, installs dependencies, and opens the window. The window uses classic Tk controls (not themed widgets) with a light background and dark text, because macOS system Tk often paints a blank white window otherwise. It is sized to the screen so the URL field, CV picker, threshold, and run button stay at the top.
+First launch creates `.venv`, installs dependencies, and opens the window. The window is a dark glass-style panel with custom-drawn buttons and a progress strip. The job-board URL field is the obvious paste target. After a CV is chosen you get a short preview of the extracted text. During a search the window shows the page being fetched, how many jobs have been found, and the elapsed time. The last URL is remembered locally. Themed Tk controls are not used, because macOS system Tk leaves them blank.
 
 Python של macOS (LibreSSL) מדפיס אזהרה עם urllib3 2. הקובץ `requirements.txt` נועל את urllib3 לגרסה 1.26, בלי האזהרה.
 
@@ -81,7 +81,7 @@ python3 -m job_matcher --url "https://example.com/careers" --cv ~/Desktop/cv.pdf
 
 ## מגבלות / Limits
 
-- אין דפדפן ואין עקיפת התחברות. אתר שדורש חשבון, חומת captcha, או חוסם בקשות (למשל Cloudflare) ייכשל בצורה מפורשת.
+- אין דפדפן מוטמע ואין עקיפת התחברות. בזמן חיפוש מוצג רק הקישור שנשלף וקטע קצר מהעמוד. אתר שדורש חשבון, חומת captcha, או חוסם בקשות (למשל Cloudflare) ייכשל בצורה מפורשת.
 - אתרים שהמשרות שלהם נבנות רק ב-JavaScript (הרבה עמודי LinkedIn, Indeed, וחלק מ-Workday) לא יחזירו משרות. האפליקציה קוראת HTML ציבורי, כולל JSON-LD מסוג `JobPosting`, ומזהה מבני לוחות נפוצים כשהתוכן נמצא ב-HTML (Greenhouse, Lever, עמוד עם כותרות Requirements / דרישות).
 - PDF סרוק בלי שכבת טקסט לא נקרא.
 - האחוז הוא כלל שקוף על הטקסט שחולץ, לא שיפוט של מגייס. דרישת ניסיון עם מספר שנים שוקלת יותר. אם שנות הניסיון בתחום לא כתובות בקורות החיים, הדרישה לא תסומן כנענתה במלואה.

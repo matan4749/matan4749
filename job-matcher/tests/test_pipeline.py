@@ -238,6 +238,118 @@ class PipelineTests(unittest.TestCase):
         self.assertIn('pyobjc-core==10.3.2; sys_platform == "darwin"', requirements)
         self.assertIn('pyobjc-framework-Cocoa==10.3.2; sys_platform == "darwin"', requirements)
         self.assertIn("import Cocoa", command)
+        imported = set()
+        for line in gui.splitlines():
+            stripped = line.strip().rstrip(",")
+            if stripped.startswith("NS"):
+                imported.add(stripped)
+        used = set(__import__("re").findall(r"\bNS[A-Za-z0-9_]+\b", gui))
+        self.assertEqual(used - imported, set())
+
+    def test_window_builds_with_imported_symbols(self) -> None:
+        import sys
+        import types
+
+        if sys.platform == "darwin":
+            import job_matcher.gui as gui
+            window = gui.JobMatcherWindow.alloc().init()
+            window.open_window()
+            self.assertIsNotNone(window.window)
+            return
+
+        class _Meta(type):
+            def __getattr__(cls, name):
+                def _call(*_args, **_kwargs):
+                    return _Obj()
+                return _call
+
+            def __or__(cls, other):
+                return cls
+
+            def __ror__(cls, other):
+                return cls
+
+        class _Obj(metaclass=_Meta):
+            def __init__(self, *_args, **_kwargs) -> None:
+                pass
+
+            def __getattr__(self, name):
+                if name.startswith("_"):
+                    raise AttributeError(name)
+
+                def _call(*_args, **_kwargs):
+                    return _Obj()
+
+                return _call
+
+            def __or__(self, other):
+                return self
+
+            def __ror__(self, other):
+                return self
+
+            def __getitem__(self, _index):
+                return _Obj()
+
+            @property
+            def size(self):
+                return self
+
+            @property
+            def origin(self):
+                return self
+
+            @property
+            def width(self):
+                return 1400.0
+
+            @property
+            def height(self):
+                return 900.0
+
+            @property
+            def x(self):
+                return 40.0
+
+            @property
+            def y(self):
+                return 40.0
+
+        class _NSObject:
+            pass
+
+        cocoa = types.ModuleType("Cocoa")
+
+        def _cocoa_getattr(name):
+            if name == "NSObject":
+                return _NSObject
+            return _Obj
+
+        cocoa.__getattr__ = _cocoa_getattr  # type: ignore[attr-defined]
+        app_helper = types.ModuleType("PyObjCTools.AppHelper")
+        app_helper.runEventLoop = lambda *_a, **_k: None
+        tools = types.ModuleType("PyObjCTools")
+        tools.AppHelper = app_helper
+        saved = {key: sys.modules.get(key) for key in ("Cocoa", "PyObjCTools", "PyObjCTools.AppHelper", "job_matcher.gui")}
+        sys.modules["Cocoa"] = cocoa
+        sys.modules["PyObjCTools"] = tools
+        sys.modules["PyObjCTools.AppHelper"] = app_helper
+        sys.modules.pop("job_matcher.gui", None)
+        try:
+            import job_matcher.gui as gui
+
+            window = gui.JobMatcherWindow()
+            window.open_window()
+            self.assertIn("url_field", window.views)
+            self.assertIn("cv_button", window.buttons)
+            self.assertIn("run", window.buttons)
+            self.assertIsNotNone(window.window)
+        finally:
+            for key, value in saved.items():
+                if value is None:
+                    sys.modules.pop(key, None)
+                else:
+                    sys.modules[key] = value
 
     def test_appkit_helpers_are_not_selectors(self) -> None:
         import ast

@@ -18,6 +18,7 @@ from Cocoa import (
     NSBezelStyleRounded,
     NSBox,
     NSBoxCustom,
+    NSButton,
     NSColor,
     NSFocusRingTypeNone,
     NSFont,
